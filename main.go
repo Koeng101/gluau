@@ -328,7 +328,11 @@ func main() {
 	if err != nil {
 		panic("failed to set a")
 	}
-	err = globTab.Set(vmlib.GoString("_G"), globTab.ToValue())
+	clonedGlobTab, err := vmlib.CloneValue(vm, globTab.ToValue())
+	if err != nil {
+		panic("failed to clone global table: " + err.Error())
+	}
+	err = globTab.Set(vmlib.GoString("_G"), clonedGlobTab)
 	if err != nil {
 		panic("failed to set _G")
 	}

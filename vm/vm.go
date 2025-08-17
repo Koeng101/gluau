@@ -211,13 +211,14 @@ func (l *GoLuaVmWrapper) CreateFunction(callback FunctionFn) (*LuaFunction, erro
 		}()
 
 		// Take out args
-		// args as a object will be deallocated by the Rust side
+		// mw as a object will be deallocated by the Rust side
 		mw := &luaMultiValue{ptr: cval.args, lua: l}
 		args := mw.take()
 
 		callbackVm := &GoLuaVmWrapper{obj: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
-		values, err := callback(callbackVm, args)
 		defer callbackVm.Close() // Free the memory associated with the callback VM
+
+		values, err := callback(callbackVm, args)
 
 		if err != nil {
 			errBytes := []byte(err.Error())

@@ -7,6 +7,7 @@ package vm
 import "C"
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 )
 
@@ -30,28 +31,65 @@ const (
 
 	// Custom types not sent by Rust ever
 	// to make the library more ergonomic
-	LuaValueCustom_GoString LuaValueType = 14
+	LuaValueCustom_GoString   LuaValueType = 14
+	LuaValueCustom_OwnedValue LuaValueType = 15
 )
+
+func (l LuaValueType) String() string {
+	switch l {
+	case LuaValueNil:
+		return "nil"
+	case LuaValueBoolean:
+		return "boolean"
+	case LuaValueLightUserData:
+		return "lightuserdata"
+	case LuaValueInteger:
+		return "integer"
+	case LuaValueNumber:
+		return "number"
+	case LuaValueVector:
+		return "vector"
+	case LuaValueString:
+		return "string"
+	case LuaValueTable:
+		return "table"
+	case LuaValueFunction:
+		return "function"
+	case LuaValueThread:
+		return "thread"
+	case LuaValueUserData:
+		return "userdata"
+	case LuaValueBuffer:
+		return "buffer"
+	case LuaValueError:
+		return "error"
+	case LuaValueOther:
+		return "other"
+	case LuaValueCustom_GoString:
+		return "string"
+	default:
+		return "unknown"
+	}
+}
 
 type Value interface {
 	Type() LuaValueType
 	Close()
-	object() *object  // Returns the underlying object for this value
-	needsClone() bool // Returns true if the value needs to be cloned in valueToC to be safely passed to rust
+	object() *object // Returns the underlying object for this value
 }
 
 // ValueNil represents a Lua nil value.
 type ValueNil struct{}
 
+func NewValueNil() *ValueNil {
+	return &ValueNil{}
+}
 func (v *ValueNil) Type() LuaValueType {
 	return LuaValueNil
 }
 func (v *ValueNil) Close() {}
 func (v *ValueNil) object() *object {
 	return nil // Nil has no underlying object
-}
-func (v *ValueNil) needsClone() bool {
-	return false // Nil does not need to be cloned
 }
 
 type ValueBoolean struct {
@@ -72,9 +110,6 @@ func (v *ValueBoolean) Type() LuaValueType {
 func (v *ValueBoolean) Close() {}
 func (v *ValueBoolean) object() *object {
 	return nil // Boolean has no underlying object
-}
-func (v *ValueBoolean) needsClone() bool {
-	return false // Boolean does not need to be cloned
 }
 
 // ValueLightUserData is a pointer to an arbitrary C data type.
@@ -99,9 +134,6 @@ func (v *ValueLightUserData) Close() {}
 func (v *ValueLightUserData) object() *object {
 	return nil // LightUserData has no underlying object
 }
-func (v *ValueLightUserData) needsClone() bool {
-	return false // LightUserData does not need to be cloned
-}
 
 // ValueInteger represents a Lua integer value.
 type ValueInteger struct {
@@ -121,9 +153,6 @@ func (v *ValueInteger) Type() LuaValueType {
 func (v *ValueInteger) Close() {}
 func (v *ValueInteger) object() *object {
 	return nil // Integer has no underlying object
-}
-func (v *ValueInteger) needsClone() bool {
-	return false // Integer does not need to be cloned
 }
 
 // ValueNumber represents a Lua number value.
@@ -145,9 +174,6 @@ func (v *ValueNumber) Type() LuaValueType {
 func (v *ValueNumber) Close() {}
 func (v *ValueNumber) object() *object {
 	return nil // Number has no underlying object
-}
-func (v *ValueNumber) needsClone() bool {
-	return false // Number does not need to be cloned
 }
 
 // ValueVector represents a Luau vector value (3D vector).
@@ -172,9 +198,6 @@ func (v *ValueVector) Close() {}
 func (v *ValueVector) object() *object {
 	return nil // Vector has no underlying object
 }
-func (v *ValueVector) needsClone() bool {
-	return false // Vector does not need to be cloned
-}
 
 // ValueString represents a Lua string value.
 type ValueString struct {
@@ -192,13 +215,7 @@ func (v *ValueString) Close() {
 	v.value.Close()
 }
 func (v *ValueString) object() *object {
-	if v.value == nil {
-		return nil // String has no underlying object if nil
-	}
 	return v.value.object
-}
-func (v *ValueString) needsClone() bool {
-	return true // String needs to be cloned to be safely passed to rust
 }
 
 // ValueTable represents a Lua table value.
@@ -221,9 +238,6 @@ func (v *ValueTable) object() *object {
 	}
 	return v.value.object
 }
-func (v *ValueTable) needsClone() bool {
-	return true // Table needs to be cloned to be safely passed to rust
-}
 
 type ValueFunction struct {
 	value *LuaFunction
@@ -241,9 +255,6 @@ func (v *ValueFunction) Close() {
 func (v *ValueFunction) object() *object {
 	return v.value.object
 }
-func (v *ValueFunction) needsClone() bool {
-	return true // Function needs to be cloned to be safely passed to rust
-}
 
 type ValueThread struct {
 	value *C.void // TODO
@@ -258,14 +269,15 @@ func (v *ValueThread) Close() {
 func (v *ValueThread) object() *object {
 	return nil // Thread has no underlying object
 }
-func (v *ValueThread) needsClone() bool {
-	return true // Thread needs to be cloned to be safely passed to rust
-}
 
 type ValueUserData struct {
 	value *LuaUserData
 }
 
+// Value returns the LuaUserData value of the ValueUserData.
+func (v *ValueUserData) Value() *LuaUserData {
+	return v.value
+}
 func (v *ValueUserData) Type() LuaValueType {
 	return LuaValueUserData
 }
@@ -274,9 +286,6 @@ func (v *ValueUserData) Close() {
 }
 func (v *ValueUserData) object() *object {
 	return v.value.object // Return the underlying object of the LuaUserData
-}
-func (v *ValueUserData) needsClone() bool {
-	return true // UserData needs to be cloned to be safely passed to rust
 }
 
 type ValueBuffer struct {
@@ -291,9 +300,6 @@ func (v *ValueBuffer) Close() {
 }
 func (v *ValueBuffer) object() *object {
 	return nil // Buffer has no underlying object
-}
-func (v *ValueBuffer) needsClone() bool {
-	return true // Buffer needs to be cloned to be safely passed to rust
 }
 
 // ValueError represents a Lua error value.
@@ -311,13 +317,7 @@ func (v *ValueError) Close() {
 	v.value.Close()
 }
 func (v *ValueError) object() *object {
-	if v.value == nil {
-		return nil // Error has no underlying object if nil
-	}
 	return v.value.object
-}
-func (v *ValueError) needsClone() bool {
-	return true // Error needs to be cloned to be safely passed to rust
 }
 
 type ValueOther struct {
@@ -331,9 +331,6 @@ func (v *ValueOther) Close() {}
 func (v *ValueOther) object() *object {
 	return nil // Other has no underlying object
 }
-func (v *ValueOther) needsClone() bool {
-	return false // Other does not need to be cloned, as it is always nil (for now)
-}
 
 type GoString string
 
@@ -344,17 +341,35 @@ func (v GoString) Close() {}
 func (v GoString) object() *object {
 	return nil // GoString has no underlying object
 }
-func (v GoString) needsClone() bool {
-	// GoString does not need to be cloned as it is a extension type
-	// that is converted to a LuaString when converted to C
-	//
-	// Memory leak safety: as all methods taking in an LuaValue in rust side
-	// will take ownership of the value, the LuaString will be dropped in
-	// rust side automatically.
-	return false
+
+// CloneValue clones a vmlib.Value to a new vmlib.Value
+func CloneValue(l *GoLuaVmWrapper, value Value) (Value, error) {
+	if value == nil {
+		return nil, errors.New("cannot clone nil value")
+	}
+
+	// Acquire read lock to ensure the object is not closed while cloning
+	obj := value.object()
+	if obj != nil {
+		obj.RLock()
+		defer obj.RUnlock()
+	}
+
+	cVal, err := l._directValueToC(value)
+	if err != nil {
+		return nil, err
+	}
+	clonedCVal := cloneValue(cVal)
+
+	clonedValue := l.valueFromC(clonedCVal)
+	if clonedValue == nil {
+		return nil, errors.New("failed to clone value")
+	}
+
+	return clonedValue, nil
 }
 
-// CloneValue clones a C struct_GoLuaValue to a new C struct_GoLuaValue.
+// cloneValue clones a C struct_GoLuaValue to a new C struct_GoLuaValue.
 func cloneValue(item C.struct_GoLuaValue) C.struct_GoLuaValue {
 	return C.luago_value_clone(item)
 }
@@ -464,7 +479,7 @@ func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, erro
 		*(*[3]float32)(unsafe.Pointer(&cVal.data)) = vecVal.value
 	case LuaValueString:
 		strVal := value.(*ValueString)
-		ptr, err := strVal.value.object.PointerNoLock()
+		ptr, err := strVal.value.object.UnsafePointer()
 		if err != nil {
 			return cVal, errors.New("cannot convert closed LuaString to C value")
 		}
@@ -472,7 +487,7 @@ func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, erro
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueTable:
 		tabVal := value.(*ValueTable)
-		ptr, err := tabVal.value.object.PointerNoLock()
+		ptr, err := tabVal.value.object.UnsafePointer()
 		if err != nil {
 			return cVal, errors.New("cannot convert closed LuaTable to C value")
 		}
@@ -480,7 +495,7 @@ func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, erro
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueFunction:
 		funcVal := value.(*ValueFunction)
-		ptr, err := funcVal.value.object.PointerNoLock()
+		ptr, err := funcVal.value.object.UnsafePointer()
 		if err != nil {
 			return cVal, errors.New("cannot convert closed LuaFunction to C value")
 		}
@@ -495,7 +510,7 @@ func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, erro
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(threadVal.value)
 	case LuaValueUserData:
 		udVal := value.(*ValueUserData)
-		ptr, err := udVal.value.object.PointerNoLock()
+		ptr, err := udVal.value.object.UnsafePointer()
 		if err != nil {
 			return cVal, errors.New("cannot convert closed LuaUserData to C value")
 		}
@@ -510,7 +525,7 @@ func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, erro
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(bufferVal.value)
 	case LuaValueError:
 		errVal := value.(*ValueError)
-		ptr, err := errVal.value.object.PointerNoLock()
+		ptr, err := errVal.value.object.UnsafePointer()
 		if err != nil {
 			return cVal, errors.New("cannot convert closed ErrorVariant to C value")
 		}
@@ -539,7 +554,7 @@ func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, erro
 
 // ValueToC converts a Go Value interface to a C struct_GoLuaValue
 // with the intent that the value will be passed to Rust code.
-// It clones the value ref pointer to ensure it is safe to use in C code.
+// It disarms the value ref pointer to ensure it cannot be used after conversion.
 //
 // Internal API: do not use unless you know what you're doing
 func (l *GoLuaVmWrapper) valueToC(value Value) (C.struct_GoLuaValue, error) {
@@ -549,9 +564,15 @@ func (l *GoLuaVmWrapper) valueToC(value Value) (C.struct_GoLuaValue, error) {
 
 	obj := value.object()
 	if obj != nil {
-		// Acquire read lock to ensure the object is not closed while converting
-		obj.RLock()
-		defer obj.RUnlock()
+		// Disarm the object to prevent it from being used after conversion
+		// Now disarm it
+		//
+		// Disarming the object won't affect the pointer but will stop normal function
+		// access to it.
+		err := obj.Disarm()
+		if err != nil {
+			return C.struct_GoLuaValue{}, fmt.Errorf("failed to disarm object: %w", err)
+		}
 	}
 
 	cptr, err := l._directValueToC(value)
@@ -559,14 +580,12 @@ func (l *GoLuaVmWrapper) valueToC(value Value) (C.struct_GoLuaValue, error) {
 		return cptr, err
 	}
 
-	// Only values with needsClone need to be cloned
-	//
-	// As a matter of fact, cloning non objects may lead
-	// to a memory leak when dealing with GoString etc.
-	cloneNeeded := value.needsClone()
-	if !cloneNeeded {
-		return cptr, nil
+	if obj != nil {
+		// The object has already been disarmed (so only UnsafePointer can be used)
+		// and Disarm will error if the object is already disarmed,
+		// so this should be (??) safe in concurrent code
+		obj.ptr = nil
 	}
 
-	return cloneValue(cptr), nil
+	return cptr, nil
 }

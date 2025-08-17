@@ -17,6 +17,7 @@ type objectTab struct {
 type object struct {
 	sync.RWMutex // read = anything that doesnt close the object, write = Close()
 	ptr          *C.void
+	closed       bool
 	tab          objectTab
 }
 
@@ -38,7 +39,7 @@ func (o *object) PointerLock() (*C.void, error) {
 	o.RWMutex.RLock()
 	defer o.RWMutex.RUnlock()
 
-	if o.ptr == nil {
+	if o.ptr == nil || o.closed {
 		return nil, errors.New("cannot use closed object")
 	}
 
@@ -48,10 +49,19 @@ func (o *object) PointerLock() (*C.void, error) {
 // PointerNoLock returns the C pointer of the object
 // without acquiring the read lock. Use with caution.
 func (o *object) PointerNoLock() (*C.void, error) {
-	if o.ptr == nil {
+	if o.ptr == nil || o.closed {
 		return nil, errors.New("cannot use closed object")
 	}
 
+	return o.ptr, nil
+}
+
+// UnsafePointer returns the pointer without any locks
+// and will not check if the object is closed or not (besides nil check).
+func (o *object) UnsafePointer() (*C.void, error) {
+	if o.ptr == nil {
+		return nil, errors.New("cannot use closed object")
+	}
 	return o.ptr, nil
 }
 
@@ -69,5 +79,32 @@ func (o *object) Close() {
 		o.tab.dtor(o.ptr) // Call the destructor if it exists
 	}
 	o.ptr = nil                  // Prevent double free
+	o.closed = true              // Mark as closed
 	runtime.SetFinalizer(o, nil) // Remove finalizer to prevent double calls
+}
+
+// Disarm disarms the object by setting the pointer to nil
+// without calling the destructor.
+func (o *object) Disarm() error {
+	ok := o.RWMutex.TryLock()
+	if !ok {
+		return errors.New("recursive lock detected, cannot disarm object")
+	}
+	defer o.RWMutex.Unlock()
+
+	return o.DisarmNoLock()
+}
+
+// DisarmNoLock disarms the object by closing the object
+// without calling the destructor. Use with caution.
+//
+// Note that the original pointer will not be nilled as that is the job of the caller.
+func (o *object) DisarmNoLock() error {
+	if o == nil || o.ptr == nil || o.closed {
+		return errors.New("cannot disarm closed object")
+	}
+
+	o.closed = true
+	runtime.SetFinalizer(o, nil) // Remove finalizer to prevent double calls
+	return nil
 }
