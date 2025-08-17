@@ -348,7 +348,7 @@ func (v GoString) object() *object {
 //
 // Locking behavior: CloneValue acquires a read lock on the object
 // being cloned (value) to ensure it is not closed while cloning.
-func CloneValue(l *GoLuaVmWrapper, value Value) (Value, error) {
+func CloneValue(l *Lua, value Value) (Value, error) {
 	if value == nil {
 		return nil, errors.New("cannot clone nil value")
 	}
@@ -380,7 +380,7 @@ func cloneValue(item C.struct_GoLuaValue) C.struct_GoLuaValue {
 // Note: this does not clone the value, it simply converts it.
 //
 // Internal API: do not use unless you know what you're doing
-func (l *GoLuaVmWrapper) valueFromC(item C.struct_GoLuaValue) Value {
+func (l *Lua) valueFromC(item C.struct_GoLuaValue) Value {
 	switch item.tag {
 	case C.LuaValueTypeNil:
 		return &ValueNil{}
@@ -454,7 +454,7 @@ func (l *GoLuaVmWrapper) valueFromC(item C.struct_GoLuaValue) Value {
 //
 // In particular, ValueFromC should *never* be called directly on the result of this function,
 // as it may lead to memory corruption or undefined behavior.
-func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
+func (l *Lua) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
 	var cVal C.struct_GoLuaValue
 	switch value.Type() {
 	case LuaValueNil:
@@ -559,7 +559,7 @@ func (l *GoLuaVmWrapper) _directValueToC(value Value) (C.struct_GoLuaValue, erro
 // It disarms the value ref pointer to ensure it cannot be used after conversion.
 //
 // Internal API: do not use unless you know what you're doing
-func (l *GoLuaVmWrapper) valueToC(value Value) (C.struct_GoLuaValue, error) {
+func (l *Lua) valueToC(value Value) (C.struct_GoLuaValue, error) {
 	if value == nil {
 		return C.struct_GoLuaValue{}, errors.New("cannot convert nil value to C")
 	}

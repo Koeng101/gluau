@@ -1,16 +1,16 @@
 use std::ffi::{c_char, c_void, CString};
 
-use crate::{result::{GoBoolResult, GoI64Result, GoNoneResult, GoTableResult, GoValueResult}, value::GoLuaValue, IGoCallback, IGoCallbackWrapper, LuaVmWrapper};
+use crate::{result::{GoBoolResult, GoI64Result, GoNoneResult, GoTableResult, GoValueResult}, value::GoLuaValue, IGoCallback, IGoCallbackWrapper};
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_create_table(ptr: *mut LuaVmWrapper) -> GoTableResult  {
-    // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
+pub extern "C-unwind" fn luago_create_table(ptr: *mut mluau::Lua) -> GoTableResult  {
+    // Safety: Assume ptr is a valid, non-null pointer to a Lua
     if ptr.is_null() {
-        return GoTableResult::err("LuaVmWrapper pointer is null".to_string());
+        return GoTableResult::err("Lua pointer is null".to_string());
     }
 
     let res = unsafe {
-        let lua = &(*ptr).lua;
+        let lua = &*ptr;
         lua.create_table()
     };
 
@@ -21,14 +21,14 @@ pub extern "C-unwind" fn luago_create_table(ptr: *mut LuaVmWrapper) -> GoTableRe
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_create_table_with_capacity(ptr: *mut LuaVmWrapper, narr: usize, nrec: usize) -> GoTableResult  {
-    // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
+pub extern "C-unwind" fn luago_create_table_with_capacity(ptr: *mut mluau::Lua, narr: usize, nrec: usize) -> GoTableResult  {
+    // Safety: Assume ptr is a valid, non-null pointer to a Lua
     if ptr.is_null() {
-        return GoTableResult::err("LuaVmWrapper pointer is null".to_string());
+        return GoTableResult::err("Lua pointer is null".to_string());
     }
 
     let res = unsafe {
-        let lua = &(*ptr).lua;
+        let lua = &*ptr;
         lua.create_table_with_capacity(narr, nrec)
     };
 

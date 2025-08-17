@@ -1,4 +1,4 @@
-use crate::{compiler::CompilerOpts, result::GoFunctionResult, LuaVmWrapper};
+use crate::{compiler::CompilerOpts, result::GoFunctionResult};
 
 // A ChunkString will be deallocated by Rust directly.
 pub struct ChunkString {
@@ -35,12 +35,12 @@ pub struct ChunkOpts {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_load_chunk(ptr: *mut LuaVmWrapper, opts: ChunkOpts) -> GoFunctionResult {
+pub extern "C-unwind" fn luago_load_chunk(ptr: *mut mluau::Lua, opts: ChunkOpts) -> GoFunctionResult {
     if ptr.is_null() || opts.code.is_null() {
-        return GoFunctionResult::err("LuaVmWrapper pointer or ChunkOpts code is null".to_string());
+        return GoFunctionResult::err("Lua pointer or ChunkOpts code is null".to_string());
     }
 
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
     let code = unsafe { Box::from_raw(opts.code) };
     
     // Load the chunk with the provided options

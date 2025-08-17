@@ -9,7 +9,6 @@ pub mod compiler;
 pub mod chunk;
 pub mod userdata;
 
-use mluau::Lua;
 use std::ffi::c_void;
 
 // typedef void (*Callback)(void* val, void* handle);
@@ -60,8 +59,4 @@ pub extern "C-unwind" fn test_callback(cb: IGoCallback, val: *mut c_void) {
     // Safety: Call the callback function with the provided value.
     let wrapper = IGoCallbackWrapper::new(cb);
     wrapper.callback(val);
-}
-
-pub struct LuaVmWrapper {
-    pub lua: Lua,
 }

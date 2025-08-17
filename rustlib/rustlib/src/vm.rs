@@ -2,12 +2,12 @@ use std::ffi::c_void;
 
 use mluau::Lua;
 
-use crate::{compiler::CompilerOpts, result::GoNoneResult, value::ErrorVariant, IGoCallback, IGoCallbackWrapper, LuaVmWrapper};
+use crate::{compiler::CompilerOpts, result::GoNoneResult, value::ErrorVariant, IGoCallback, IGoCallbackWrapper};
 
 // Base functions
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn newluavm() -> *mut LuaVmWrapper {
+pub extern "C-unwind" fn newluavm() -> *mut mluau::Lua {
     let lua = Lua::new_with(
         mluau::StdLib::ALL_SAFE, // TODO: Allow configuring this
         mluau::LuaOptions::new()
@@ -19,26 +19,26 @@ pub extern "C-unwind" fn newluavm() -> *mut LuaVmWrapper {
         println!("Lua VM is being closed");
     });
 
-    let wrapper = Box::new(LuaVmWrapper { lua });
+    let wrapper = Box::new(lua);
     Box::into_raw(wrapper)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luavm_setcompileropts(ptr: *mut LuaVmWrapper, opts: CompilerOpts) {
+pub extern "C-unwind" fn luavm_setcompileropts(ptr: *mut mluau::Lua, opts: CompilerOpts) {
     if ptr.is_null() {
         return; // no-op if pointer is null
     }
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
     lua.set_compiler(opts.to_compiler());
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luavm_setmemorylimit(ptr: *mut LuaVmWrapper, limit: usize) -> GoNoneResult {
+pub extern "C-unwind" fn luavm_setmemorylimit(ptr: *mut mluau::Lua, limit: usize) -> GoNoneResult {
     // Safety: Assume the Lua VM is valid and we can set its memory limit.
     if ptr.is_null() {
-        return GoNoneResult::err("LuaVmWrapper pointer is null".to_string());
+        return GoNoneResult::err("Lua pointer is null".to_string());
     }
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
     match lua.set_memory_limit(limit) {
         Ok(_) => GoNoneResult::ok(),
         Err(err) => GoNoneResult::err(format!("{err}")),
@@ -46,12 +46,12 @@ pub extern "C-unwind" fn luavm_setmemorylimit(ptr: *mut LuaVmWrapper, limit: usi
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luavm_sandbox(ptr: *mut LuaVmWrapper, enabled: bool) -> GoNoneResult {
+pub extern "C-unwind" fn luavm_sandbox(ptr: *mut mluau::Lua, enabled: bool) -> GoNoneResult {
     // Safety: Assume the Lua VM is valid and we can set its sandbox mode.
     if ptr.is_null() {
-        return GoNoneResult::err("LuaVmWrapper pointer is null".to_string());
+        return GoNoneResult::err("Lua pointer is null".to_string());
     }
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
     match lua.sandbox(enabled) {
         Ok(_) => GoNoneResult::ok(),
         Err(err) => GoNoneResult::err(format!("{err}")),
@@ -59,22 +59,22 @@ pub extern "C-unwind" fn luavm_sandbox(ptr: *mut LuaVmWrapper, enabled: bool) ->
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_globals(ptr: *mut LuaVmWrapper) -> *mut mluau::Table {
+pub extern "C-unwind" fn luago_globals(ptr: *mut mluau::Lua) -> *mut mluau::Table {
     // Safety: Assume the Lua VM is valid and we can access its globals.
     if ptr.is_null() {
         return std::ptr::null_mut();
     }
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
     Box::into_raw(Box::new(lua.globals()))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_setglobals(ptr: *mut LuaVmWrapper, tab: *mut mluau::Table) -> GoNoneResult {
+pub extern "C-unwind" fn luago_setglobals(ptr: *mut mluau::Lua, tab: *mut mluau::Table) -> GoNoneResult {
     // Safety: Assume the Lua VM is valid and we can access its globals.
     if ptr.is_null() {
-        return GoNoneResult::err("LuaVmWrapper pointer is null".to_string());
+        return GoNoneResult::err("Lua pointer is null".to_string());
     }
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
     let tab = unsafe { &*tab };
     match lua.set_globals(tab.clone()) {
         Ok(_) => GoNoneResult::ok(),
@@ -84,12 +84,12 @@ pub extern "C-unwind" fn luago_setglobals(ptr: *mut LuaVmWrapper, tab: *mut mlua
 
 #[repr(C)]
 pub struct InterruptData {
-    // LuaVmWrapper representing the Lua State
+    // mluau::Lua representing the Lua State
     // as called from Lua.
     //
-    // This means that (future) API's like LuaVmWrapper.CurrentThread will return
-    // the correct thread when using this LuaVmWrapper.
-    pub lua: *mut LuaVmWrapper,
+    // This means that (future) API's like Lua.CurrentThread will return
+    // the correct thread when using this Lua.
+    pub lua: *mut mluau::Lua,
 
     // Go side may set this to set a response
     pub vm_state: u8,
@@ -97,17 +97,17 @@ pub struct InterruptData {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_set_interrupt(ptr: *mut LuaVmWrapper, cb: IGoCallback)  {
-    // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
+pub extern "C-unwind" fn luago_set_interrupt(ptr: *mut mluau::Lua, cb: IGoCallback)  {
+    // Safety: Assume ptr is a valid, non-null pointer to a mluau::Lua
     if ptr.is_null() {
         return;
     }
 
     let cb_wrapper = IGoCallbackWrapper::new(cb);
 
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
     lua.set_interrupt(move |lua| {
-        let wrapper = Box::new(LuaVmWrapper { lua: lua.clone() });
+        let wrapper = Box::new(lua.clone());
         let lua_ptr = Box::into_raw(wrapper);
         
         let data = InterruptData {
@@ -134,19 +134,19 @@ pub extern "C-unwind" fn luago_set_interrupt(ptr: *mut LuaVmWrapper, cb: IGoCall
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_remove_interrupt(ptr: *mut LuaVmWrapper)  {
-    // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
+pub extern "C-unwind" fn luago_remove_interrupt(ptr: *mut mluau::Lua)  {
+    // Safety: Assume ptr is a valid, non-null pointer to a Lua
     if ptr.is_null() {
         return;
     }
 
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
     lua.remove_interrupt();
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn freeluavm(ptr: *mut LuaVmWrapper) {
-    // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
+pub extern "C-unwind" fn freeluavm(ptr: *mut mluau::Lua) {
+    // Safety: Assume ptr is a valid, non-null pointer to a mluau::Lua
     // and that ownership is being transferred back to Rust to be dropped.
     unsafe {
         drop(Box::from_raw(ptr));

@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-struct LuaVmWrapper;
+struct Lua;
 
 // CompilerOpts API
 
@@ -17,13 +17,13 @@ struct CompilerOpts {
     uint8_t coverage_level;
 };
 
-struct LuaVmWrapper* newluavm();
-void luavm_setcompileropts(struct LuaVmWrapper* ptr, struct CompilerOpts opts);
-struct GoNoneResult luavm_setmemorylimit(struct LuaVmWrapper* ptr, size_t limit);
-struct GoNoneResult luavm_sandbox(struct LuaVmWrapper* ptr, bool enabled);
-struct LuaTable* luago_globals(struct LuaVmWrapper* ptr);
-struct GoNoneResult luago_setglobals(struct LuaVmWrapper* ptr, struct LuaTable* globals);
-void freeluavm(struct LuaVmWrapper* ptr);
+struct Lua* newluavm();
+void luavm_setcompileropts(struct Lua* ptr, struct CompilerOpts opts);
+struct GoNoneResult luavm_setmemorylimit(struct Lua* ptr, size_t limit);
+struct GoNoneResult luavm_sandbox(struct Lua* ptr, bool enabled);
+struct LuaTable* luago_globals(struct Lua* ptr);
+struct GoNoneResult luago_setglobals(struct Lua* ptr, struct LuaTable* globals);
+void freeluavm(struct Lua* ptr);
 
 typedef void (*Callback)(void* val, uintptr_t handle);
 typedef void (*DropCallback)(uintptr_t handle);
@@ -44,7 +44,7 @@ void test_callback(struct IGoCallback* cb, void* val);
 void luago_result_error_free(char* result_error_ptr);
 
 // Returns a GoResult[LuaString]
-struct GoStringResult luago_create_string(struct LuaVmWrapper* ptr, const char* str, size_t len);
+struct GoStringResult luago_create_string(struct Lua* ptr, const char* str, size_t len);
 struct LuaString;
 
 struct LuaStringBytes {
@@ -111,8 +111,8 @@ void luago_error_free(struct ErrorVariant* ptr);
 
 // Table API
 struct LuaTable;
-struct GoTableResult luago_create_table(struct LuaVmWrapper* ptr);
-struct GoTableResult luago_create_table_with_capacity(struct LuaVmWrapper* ptr, size_t narr, size_t nrec);
+struct GoTableResult luago_create_table(struct Lua* ptr);
+struct GoTableResult luago_create_table_with_capacity(struct Lua* ptr, size_t narr, size_t nrec);
 struct GoNoneResult luago_table_clear(struct LuaTable* ptr);
 struct GoBoolResult luago_table_contains_key(struct LuaTable* ptr, struct GoLuaValue key);
 struct GoBoolResult luago_table_equals(struct LuaTable* ptr, struct LuaTable* other);
@@ -154,14 +154,14 @@ void luago_free_table(struct LuaTable* ptr);
 // Functions
 struct LuaFunction;
 struct FunctionCallbackData {
-    struct LuaVmWrapper* lua;
+    struct Lua* lua;
     struct GoMultiValue* args; // NOTE: Rust will deallocate this
 
     // Go side may set this to set a response
     struct GoMultiValue* values; // NOTE: Rust will deallocate this
     struct ErrorVariant *error; // NOTE: Rust will deallocate this
 };
-struct GoFunctionResult luago_create_function(struct LuaVmWrapper* ptr, struct IGoCallback cb);
+struct GoFunctionResult luago_create_function(struct Lua* ptr, struct IGoCallback cb);
 struct GoMultiValueResult luago_function_call(struct LuaFunction* ptr, struct GoMultiValue* args);
 uintptr_t luago_function_to_pointer(struct LuaFunction* ptr);
 struct GoFunctionResult luago_function_deepclone(struct LuaFunction* ptr);
@@ -175,7 +175,7 @@ struct DynamicData {
     uint64_t handle; // cgo handle to the data
     DropCallback drop; // cgo drop callback
 };
-struct GoUserDataResult luago_create_userdata(struct LuaVmWrapper* ptr, struct DynamicData data, struct LuaTable* mt);
+struct GoUserDataResult luago_create_userdata(struct Lua* ptr, struct DynamicData data, struct LuaTable* mt);
 struct GoUsizePtrResult luago_get_userdata_handle(struct LuaUserData* ptr);
 uintptr_t luago_userdata_to_pointer(struct LuaUserData* ptr);
 struct GoTableResult luago_userdata_metatable(struct LuaUserData* ptr);
@@ -261,16 +261,16 @@ struct ChunkOpts {
     // The actual code of the chunk.
     struct ChunkString* code;
 };
-struct GoFunctionResult luago_load_chunk(struct LuaVmWrapper* ptr, struct ChunkOpts opts);
+struct GoFunctionResult luago_load_chunk(struct Lua* ptr, struct ChunkOpts opts);
 
 // Interrupt API
 struct InterruptData {
-    // Pointer to the LuaVmWrapper
-    struct LuaVmWrapper* lua;
+    // Pointer to the Lua
+    struct Lua* lua;
 
     // Go side may set this to set a response
     uint8_t vm_state;
     struct ErrorVariant *error; // NOTE: Rust will deallocate this
 };
-void luago_set_interrupt(struct LuaVmWrapper* ptr, struct IGoCallback cb);
-void luago_remove_interrupt(struct LuaVmWrapper* ptr);
+void luago_set_interrupt(struct Lua* ptr, struct IGoCallback cb);
+void luago_remove_interrupt(struct Lua* ptr);

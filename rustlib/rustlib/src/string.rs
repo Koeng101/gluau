@@ -2,13 +2,13 @@
 
 use std::ffi::c_char;
 
-use crate::{result::GoStringResult, LuaVmWrapper};
+use crate::result::GoStringResult;
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_create_string(ptr: *mut LuaVmWrapper, s: *const c_char, len: usize) -> GoStringResult  {
-    // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
+pub extern "C-unwind" fn luago_create_string(ptr: *mut mluau::Lua, s: *const c_char, len: usize) -> GoStringResult  {
+    // Safety: Assume ptr is a valid, non-null pointer to a Lua
     // and that s points to a valid C string of length len.
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
 
     let res = if s.is_null() {
         // Create an empty string if the pointer is null.

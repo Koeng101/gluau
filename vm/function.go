@@ -20,7 +20,7 @@ var functionTab = objectTab{
 // API's to be implemented as of now: coverage, info (more complex to implement),
 type LuaFunction struct {
 	object *object
-	lua    *GoLuaVmWrapper
+	lua    *Lua
 }
 
 func (l *LuaFunction) innerPtr() (*C.struct_LuaFunction, error) {

@@ -10,12 +10,12 @@ import (
 // A ValuePool stores a Value and allows for cloning it
 // with a Close method to free both the original and cloned values.
 type ValuePool struct {
-	lua    *vm.GoLuaVmWrapper
+	lua    *vm.Lua
 	value  vm.Value
 	clones []vm.Value
 }
 
-func NewValuePool(lua *vm.GoLuaVmWrapper, value vm.Value) *ValuePool {
+func NewValuePool(lua *vm.Lua, value vm.Value) *ValuePool {
 	return &ValuePool{
 		lua:    lua,
 		value:  value,

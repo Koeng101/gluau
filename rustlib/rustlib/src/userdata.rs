@@ -1,4 +1,4 @@
-use crate::{result::{GoAnyUserDataResult, GoTableResult, GoUsizePtrResult}, LuaVmWrapper};
+use crate::result::{GoAnyUserDataResult, GoTableResult, GoUsizePtrResult};
 
 /// DynamicData stores the cgo handle + callback for dynamic userdata functions.
 #[repr(C)]
@@ -18,15 +18,15 @@ impl Drop for DynamicData {
 } 
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_create_userdata(ptr: *mut LuaVmWrapper, data: DynamicData, mt: *mut mluau::Table) -> GoAnyUserDataResult {
+pub extern "C-unwind" fn luago_create_userdata(ptr: *mut mluau::Lua, data: DynamicData, mt: *mut mluau::Table) -> GoAnyUserDataResult {
     // Safety: Create a new userdata with the provided data and metatable.
     if ptr.is_null() {
-        return GoAnyUserDataResult::err("LuaVmWrapper pointer is null".to_string());
+        return GoAnyUserDataResult::err("Lua pointer is null".to_string());
     }
     if mt.is_null() {
         return GoAnyUserDataResult::err("Metatable pointer is null".to_string());
     }
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
     let mt = unsafe { &*mt };
 
     let res = lua.create_dynamic_userdata(data, mt);

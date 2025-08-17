@@ -11,13 +11,13 @@ import (
 //
 // WARNING: This is an experimental and completely untested feature.
 type TypedUserData[T any] struct {
-	mt           *vm.LuaTable                                                            // cached/shared metatable for the user data
-	fields       map[string]vm.Value                                                     // fields of the user data
-	fieldGetters map[string]func(*T) (vm.Value, error)                                   // field getters
-	fieldSetters map[string]func(*T, *vm.GoLuaVmWrapper, vm.Value) error                 // field setters
-	methods      map[string]func(*T, *vm.GoLuaVmWrapper, []vm.Value) ([]vm.Value, error) // methods of the user data
-	typename     string                                                                  // type name of the user data
-	metamethods  map[string]func(*T, *vm.GoLuaVmWrapper, []vm.Value) ([]vm.Value, error) // metamethods
+	mt           *vm.LuaTable                                                 // cached/shared metatable for the user data
+	fields       map[string]vm.Value                                          // fields of the user data
+	fieldGetters map[string]func(*T) (vm.Value, error)                        // field getters
+	fieldSetters map[string]func(*T, *vm.Lua, vm.Value) error                 // field setters
+	methods      map[string]func(*T, *vm.Lua, []vm.Value) ([]vm.Value, error) // methods of the user data
+	typename     string                                                       // type name of the user data
+	metamethods  map[string]func(*T, *vm.Lua, []vm.Value) ([]vm.Value, error) // metamethods
 }
 
 // Parse the first value as a TypedUserData of type T returning the data and the remaining values
@@ -54,12 +54,12 @@ func (tud *TypedUserData[T]) AddFieldGetter(name string, getter func(*T) (vm.Val
 }
 
 // Adds a field setter to the TypedUserData
-func (tud *TypedUserData[T]) AddFieldSetter(name string, setter func(*T, *vm.GoLuaVmWrapper, vm.Value) error) {
+func (tud *TypedUserData[T]) AddFieldSetter(name string, setter func(*T, *vm.Lua, vm.Value) error) {
 	tud.fieldSetters[name] = setter
 }
 
 // Adds a method to the TypedUserData
-func (tud *TypedUserData[T]) AddMethod(name string, method func(*T, *vm.GoLuaVmWrapper, []vm.Value) ([]vm.Value, error)) {
+func (tud *TypedUserData[T]) AddMethod(name string, method func(*T, *vm.Lua, []vm.Value) ([]vm.Value, error)) {
 	tud.methods[name] = method
 }
 
@@ -69,7 +69,7 @@ func (tud *TypedUserData[T]) SetTypeName(typename string) {
 }
 
 // Adds a metamethod to the TypedUserData
-func (tud *TypedUserData[T]) AddMetamethod(name string, method func(*T, *vm.GoLuaVmWrapper, []vm.Value) ([]vm.Value, error)) {
+func (tud *TypedUserData[T]) AddMetamethod(name string, method func(*T, *vm.Lua, []vm.Value) ([]vm.Value, error)) {
 	tud.metamethods[name] = method
 }
 
@@ -91,7 +91,7 @@ func (tud *TypedUserData[T]) indexFastPath() bool {
 }
 
 // Creates a new UserData
-func (tud *TypedUserData[T]) Create(lua *vm.GoLuaVmWrapper, data *T) (*vm.LuaUserData, error) {
+func (tud *TypedUserData[T]) Create(lua *vm.Lua, data *T) (*vm.LuaUserData, error) {
 	if tud.mt == nil {
 		if tud.indexFastPath() {
 			mt, err := tud.createMtFast(lua)
@@ -115,7 +115,7 @@ func (tud *TypedUserData[T]) Create(lua *vm.GoLuaVmWrapper, data *T) (*vm.LuaUse
 	return ud, nil
 }
 
-func (tud *TypedUserData[T]) createMtFast(lua *vm.GoLuaVmWrapper) (*vm.LuaTable, error) {
+func (tud *TypedUserData[T]) createMtFast(lua *vm.Lua) (*vm.LuaTable, error) {
 	typeName := tud.typename
 
 	udMt, err := lua.CreateTable()
@@ -132,7 +132,7 @@ func (tud *TypedUserData[T]) createMtFast(lua *vm.GoLuaVmWrapper) (*vm.LuaTable,
 	}
 
 	for key, value := range tud.metamethods {
-		callback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
+		callback := func(funcVm *vm.Lua, args []vm.Value) ([]vm.Value, error) {
 			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
@@ -162,7 +162,7 @@ func (tud *TypedUserData[T]) createMtFast(lua *vm.GoLuaVmWrapper) (*vm.LuaTable,
 	}
 
 	for key, method := range tud.methods {
-		callback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
+		callback := func(funcVm *vm.Lua, args []vm.Value) ([]vm.Value, error) {
 			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
@@ -185,7 +185,7 @@ func (tud *TypedUserData[T]) createMtFast(lua *vm.GoLuaVmWrapper) (*vm.LuaTable,
 
 	// Handle field setters (which are handled via __newindex)
 	if len(tud.fieldSetters) != 0 {
-		newIndexCallback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
+		newIndexCallback := func(funcVm *vm.Lua, args []vm.Value) ([]vm.Value, error) {
 			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
@@ -225,7 +225,7 @@ func (tud *TypedUserData[T]) createMtFast(lua *vm.GoLuaVmWrapper) (*vm.LuaTable,
 	return udMt, nil
 }
 
-func (tud *TypedUserData[T]) createMtSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaTable, error) {
+func (tud *TypedUserData[T]) createMtSlow(lua *vm.Lua) (*vm.LuaTable, error) {
 	typeName := tud.typename
 
 	udMt, err := lua.CreateTable()
@@ -246,7 +246,7 @@ func (tud *TypedUserData[T]) createMtSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaTable,
 			continue
 		}
 
-		callback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
+		callback := func(funcVm *vm.Lua, args []vm.Value) ([]vm.Value, error) {
 			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
@@ -266,7 +266,7 @@ func (tud *TypedUserData[T]) createMtSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaTable,
 	// Create the field getter functions once
 	fieldGetterFuncs := make(map[string]*vm.LuaFunction)
 	for key, getter := range tud.fieldGetters {
-		callback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
+		callback := func(funcVm *vm.Lua, args []vm.Value) ([]vm.Value, error) {
 			self, _, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
@@ -288,7 +288,7 @@ func (tud *TypedUserData[T]) createMtSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaTable,
 
 	var methodFuncs = make(map[string]*vm.LuaFunction)
 	for key, method := range tud.methods {
-		callback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
+		callback := func(funcVm *vm.Lua, args []vm.Value) ([]vm.Value, error) {
 			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
@@ -303,7 +303,7 @@ func (tud *TypedUserData[T]) createMtSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaTable,
 		methodFuncs[key] = funct
 	}
 
-	indexCallback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
+	indexCallback := func(funcVm *vm.Lua, args []vm.Value) ([]vm.Value, error) {
 		_, args, err := ParseSelf[T](typeName, args)
 		if err != nil {
 			return nil, err
@@ -340,7 +340,7 @@ func (tud *TypedUserData[T]) createMtSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaTable,
 
 	// Handle field setters (which are handled via __newindex)
 	if len(tud.fieldSetters) != 0 {
-		newIndexCallback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
+		newIndexCallback := func(funcVm *vm.Lua, args []vm.Value) ([]vm.Value, error) {
 			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
@@ -385,9 +385,9 @@ func NewTypedUserData[T any]() *TypedUserData[T] {
 	return &TypedUserData[T]{
 		fields:       make(map[string]vm.Value),
 		fieldGetters: make(map[string]func(*T) (vm.Value, error)),
-		fieldSetters: make(map[string]func(*T, *vm.GoLuaVmWrapper, vm.Value) error),
-		methods:      make(map[string]func(*T, *vm.GoLuaVmWrapper, []vm.Value) ([]vm.Value, error)),
+		fieldSetters: make(map[string]func(*T, *vm.Lua, vm.Value) error),
+		methods:      make(map[string]func(*T, *vm.Lua, []vm.Value) ([]vm.Value, error)),
 		typename:     "",
-		metamethods:  make(map[string]func(*T, *vm.GoLuaVmWrapper, []vm.Value) ([]vm.Value, error)),
+		metamethods:  make(map[string]func(*T, *vm.Lua, []vm.Value) ([]vm.Value, error)),
 	}
 }

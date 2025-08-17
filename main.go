@@ -233,7 +233,7 @@ func main() {
 	}
 	fmt.Println("empty table equals itself", equals)
 
-	myFunc, err := vm.CreateFunction(func(lua *vmlib.GoLuaVmWrapper, args []vmlib.Value) ([]vmlib.Value, error) {
+	myFunc, err := vm.CreateFunction(func(lua *vmlib.Lua, args []vmlib.Value) ([]vmlib.Value, error) {
 		return []vmlib.Value{
 			vmlib.GoString("Hello world"),
 		}, nil
@@ -256,7 +256,7 @@ func main() {
 	fmt.Println("Function call response", res[0].(*vmlib.ValueString).Value().String())
 	defer res[0].Close()
 
-	myFunc, err = vm.CreateFunction(func(lua *vmlib.GoLuaVmWrapper, args []vmlib.Value) ([]vmlib.Value, error) {
+	myFunc, err = vm.CreateFunction(func(lua *vmlib.Lua, args []vmlib.Value) ([]vmlib.Value, error) {
 		return nil, errors.New(args[0].(*vmlib.ValueString).Value().String())
 	})
 	if err != nil {
@@ -395,7 +395,7 @@ func main() {
 	}
 
 	// Interrupt API
-	vm.SetInterrupt(func(funcVm *vmlib.GoLuaVmWrapper) (vmlib.VmState, error) {
+	vm.SetInterrupt(func(funcVm *vmlib.Lua) (vmlib.VmState, error) {
 		return vmlib.VmStateContinue, errors.New("test interrupt error")
 	})
 
@@ -424,7 +424,7 @@ func main() {
 	// Set a new interrupt which will yield the execution
 	// after 100 milliseconds
 	timeNow := time.Now()
-	vm.SetInterrupt(func(funcVm *vmlib.GoLuaVmWrapper) (vmlib.VmState, error) {
+	vm.SetInterrupt(func(funcVm *vmlib.Lua) (vmlib.VmState, error) {
 		if time.Since(timeNow) > 10*time.Millisecond {
 			fmt.Println("Interrupt triggered after 1 second")
 			return vmlib.VmStateYield, nil // Yield the execution after 100 milliseconds

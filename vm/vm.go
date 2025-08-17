@@ -12,27 +12,27 @@ import (
 
 var luaVmTab = objectTab{
 	dtor: func(ptr *C.void) {
-		C.freeluavm((*C.struct_LuaVmWrapper)(unsafe.Pointer(ptr)))
+		C.freeluavm((*C.struct_Lua)(unsafe.Pointer(ptr)))
 	},
 }
 
-// Internal VM wrapper
-type GoLuaVmWrapper struct {
+// A handle to the Lua VM.
+type Lua struct {
 	obj *object
 }
 
-func (l *GoLuaVmWrapper) lua() (*C.struct_LuaVmWrapper, error) {
+func (l *Lua) lua() (*C.struct_Lua, error) {
 	ptr, err := l.obj.PointerNoLock()
 	if err != nil {
 		return nil, err // Return error if the object is closed
 	}
-	return (*C.struct_LuaVmWrapper)(unsafe.Pointer(ptr)), nil
+	return (*C.struct_Lua)(unsafe.Pointer(ptr)), nil
 }
 
 // SetCompilerOpts sets the default compiler options for the Lua VM.
 //
 // This is a Luau-specific feature
-func (l *GoLuaVmWrapper) SetCompilerOpts(opts CompilerOpts) {
+func (l *Lua) SetCompilerOpts(opts CompilerOpts) {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -50,7 +50,7 @@ func (l *GoLuaVmWrapper) SetCompilerOpts(opts CompilerOpts) {
 // Upon exceeding this limit, Luau will return a memory error
 // back to the caller (which may either be in Luau still or in Go
 // as a error value).
-func (l *GoLuaVmWrapper) SetMemoryLimit(limit int) error {
+func (l *Lua) SetMemoryLimit(limit int) error {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -77,7 +77,7 @@ func (l *GoLuaVmWrapper) SetMemoryLimit(limit int) error {
 // - Allow only count mode in collectgarbage function.
 //
 // Note that this is a Luau-specific feature.
-func (l *GoLuaVmWrapper) Sandbox(enabled bool) error {
+func (l *Lua) Sandbox(enabled bool) error {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -94,7 +94,7 @@ func (l *GoLuaVmWrapper) Sandbox(enabled bool) error {
 }
 
 // Globals returns the global environment table of the Lua VM.
-func (l *GoLuaVmWrapper) Globals(enabled bool) *LuaTable {
+func (l *Lua) Globals(enabled bool) *LuaTable {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -114,7 +114,7 @@ func (l *GoLuaVmWrapper) Globals(enabled bool) *LuaTable {
 // Note that any existing Lua functions have cached global environment and will not see the changes made by this method.
 //
 // To update the environment for existing Lua functions, use LuaFunction.SetEnvironment
-func (l *GoLuaVmWrapper) SetGlobals(tab *LuaTable) error {
+func (l *Lua) SetGlobals(tab *LuaTable) error {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -146,7 +146,7 @@ const (
 	VmStateYield            // Yield the VM execution / stop execution
 )
 
-type InterruptFn = func(funcVm *GoLuaVmWrapper) (VmState, error)
+type InterruptFn = func(funcVm *Lua) (VmState, error)
 
 // Sets an interrupt function that will periodically be called by Luau VM.
 //
@@ -155,7 +155,7 @@ type InterruptFn = func(funcVm *GoLuaVmWrapper) (VmState, error)
 // The provided interrupt function can error, and this error will be propagated through the Luau code that was executing at the time the interrupt was triggered.
 //
 // Also this can be used to implement continuous execution limits by instructing Luau VM to yield by returning VmState::Yield.
-func (l *GoLuaVmWrapper) SetInterrupt(callback InterruptFn) {
+func (l *Lua) SetInterrupt(callback InterruptFn) {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -184,7 +184,7 @@ func (l *GoLuaVmWrapper) SetInterrupt(callback InterruptFn) {
 			}
 		}()
 
-		callbackVm := &GoLuaVmWrapper{obj: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
+		callbackVm := &Lua{obj: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
 		defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
 
 		vmState, err := callback(callbackVm)
@@ -205,7 +205,7 @@ func (l *GoLuaVmWrapper) SetInterrupt(callback InterruptFn) {
 }
 
 // Removes the interrupt function set by SetInterrupt.
-func (l *GoLuaVmWrapper) RemoveInterrupt() {
+func (l *Lua) RemoveInterrupt() {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -218,17 +218,17 @@ func (l *GoLuaVmWrapper) RemoveInterrupt() {
 }
 
 // CreateString creates a Lua string from a Go string.
-func (l *GoLuaVmWrapper) CreateString(s string) (*LuaString, error) {
+func (l *Lua) CreateString(s string) (*LuaString, error) {
 	return l.createString([]byte(s))
 }
 
 // CreateStringBytes creates a Lua string from a byte slice.
 // This is useful for creating strings from raw byte data.
-func (l *GoLuaVmWrapper) CreateStringBytes(s []byte) (*LuaString, error) {
+func (l *Lua) CreateStringBytes(s []byte) (*LuaString, error) {
 	return l.createString(s)
 }
 
-func (l *GoLuaVmWrapper) createString(s []byte) (*LuaString, error) {
+func (l *Lua) createString(s []byte) (*LuaString, error) {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -254,7 +254,7 @@ func (l *GoLuaVmWrapper) createString(s []byte) (*LuaString, error) {
 }
 
 // Create string as pointer (without any finalizer)
-func (l *GoLuaVmWrapper) createStringAsPtr(s []byte) (*C.struct_LuaString, error) {
+func (l *Lua) createStringAsPtr(s []byte) (*C.struct_LuaString, error) {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -280,7 +280,7 @@ func (l *GoLuaVmWrapper) createStringAsPtr(s []byte) (*C.struct_LuaString, error
 }
 
 // CreateTable creates a new Lua table.
-func (l *GoLuaVmWrapper) CreateTable() (*LuaTable, error) {
+func (l *Lua) CreateTable() (*LuaTable, error) {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -299,7 +299,7 @@ func (l *GoLuaVmWrapper) CreateTable() (*LuaTable, error) {
 
 // CreateTableWithCapacity creates a new Lua table with specified capacity for array and record parts.
 // with narr as the number of array elements and nrec as the number of record elements.
-func (l *GoLuaVmWrapper) CreateTableWithCapacity(narr, nrec int) (*LuaTable, error) {
+func (l *Lua) CreateTableWithCapacity(narr, nrec int) (*LuaTable, error) {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -328,7 +328,7 @@ func CreateErrorVariant(s []byte) *ErrorVariant {
 	return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
 }
 
-type FunctionFn = func(funcVm *GoLuaVmWrapper, args []Value) ([]Value, error)
+type FunctionFn = func(funcVm *Lua, args []Value) ([]Value, error)
 
 // CreateFunction creates a new Function
 //
@@ -337,7 +337,7 @@ type FunctionFn = func(funcVm *GoLuaVmWrapper, args []Value) ([]Value, error)
 // Locking behavior: All values returned by the callback function
 // will be write-locked (taken ownership of). Having any sort of read-lock
 // during a return will cause a error to be returned to Luau
-func (l *GoLuaVmWrapper) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
+func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -371,7 +371,7 @@ func (l *GoLuaVmWrapper) CreateFunction(callback FunctionFn) (*LuaFunction, erro
 		mw := &luaMultiValue{ptr: cval.args, lua: l}
 		args := mw.take()
 
-		callbackVm := &GoLuaVmWrapper{obj: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
+		callbackVm := &Lua{obj: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
 		defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
 
 		values, err := callback(callbackVm, args)
@@ -406,7 +406,7 @@ func (l *GoLuaVmWrapper) CreateFunction(callback FunctionFn) (*LuaFunction, erro
 }
 
 // LoadChunk loads a Lua chunk from the given options.
-func (l *GoLuaVmWrapper) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
+func (l *Lua) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
 
@@ -453,7 +453,7 @@ func (l *GoLuaVmWrapper) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 }
 
 // CreateUserData creates a LuaUserData with associated data and a metatable.
-func (l *GoLuaVmWrapper) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, error) {
+func (l *Lua) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, error) {
 	if mt == nil {
 		return nil, fmt.Errorf("metatable cannot be nil")
 	}
@@ -488,7 +488,7 @@ func (l *GoLuaVmWrapper) CreateUserData(associatedData any, mt *LuaTable) (*LuaU
 	}, nil
 }
 
-func (l *GoLuaVmWrapper) Close() error {
+func (l *Lua) Close() error {
 	if l == nil || l.obj == nil {
 		return nil // Nothing to close
 	}
@@ -497,11 +497,11 @@ func (l *GoLuaVmWrapper) Close() error {
 	return l.obj.Close()
 }
 
-func CreateLuaVm() (*GoLuaVmWrapper, error) {
+func CreateLuaVm() (*Lua, error) {
 	ptr := C.newluavm()
 	if ptr == nil {
 		return nil, fmt.Errorf("failed to create Lua VM")
 	}
-	vm := &GoLuaVmWrapper{obj: newObject((*C.void)(unsafe.Pointer(ptr)), luaVmTab)}
+	vm := &Lua{obj: newObject((*C.void)(unsafe.Pointer(ptr)), luaVmTab)}
 	return vm, nil
 }

@@ -17,7 +17,7 @@ var userdataTab = objectTab{
 
 // A LuaUserData is an abstraction over a Lua userdata object.
 type LuaUserData struct {
-	lua    *GoLuaVmWrapper // The Lua VM wrapper that owns this userdata
+	lua    *Lua // The Lua VM wrapper that owns this userdata
 	object *object
 }
 

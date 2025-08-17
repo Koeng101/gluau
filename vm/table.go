@@ -18,7 +18,7 @@ var tableTab = objectTab{
 
 // A LuaTable is an abstraction over a Lua table object.
 type LuaTable struct {
-	lua    *GoLuaVmWrapper // The Lua VM wrapper that owns this table
+	lua    *Lua // The Lua VM wrapper that owns this table
 	object *object
 }
 

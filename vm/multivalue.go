@@ -13,12 +13,12 @@ import "C"
 //
 // Internal API
 type luaMultiValue struct {
-	lua *GoLuaVmWrapper
+	lua *Lua
 	ptr *C.struct_GoMultiValue
 }
 
 // Creates a new empty LuaMultiValue object.
-func (l *GoLuaVmWrapper) newMultiValueWithCapacity(cap uint64) *luaMultiValue {
+func (l *Lua) newMultiValueWithCapacity(cap uint64) *luaMultiValue {
 	ptr := C.luago_create_multivalue_with_capacity(C.size_t(cap))
 	if ptr == nil {
 		return nil // Handle error if needed
@@ -55,7 +55,7 @@ func (l *luaMultiValue) len() uint64 {
 }
 
 // fromValues takes a []Value and makes a MultiValue
-func (l *GoLuaVmWrapper) multiValueFromValues(values []Value) (*luaMultiValue, error) {
+func (l *Lua) multiValueFromValues(values []Value) (*luaMultiValue, error) {
 	mw := l.newMultiValueWithCapacity(uint64(len(values)))
 	for _, v := range values {
 		err := mw.push(v)

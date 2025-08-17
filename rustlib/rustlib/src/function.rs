@@ -1,16 +1,16 @@
 use std::ffi::c_void;
 
-use crate::{multivalue::GoMultiValue, result::{GoBoolResult, GoFunctionResult, GoMultiValueResult}, value::ErrorVariant, IGoCallback, IGoCallbackWrapper, LuaVmWrapper};
+use crate::{multivalue::GoMultiValue, result::{GoBoolResult, GoFunctionResult, GoMultiValueResult}, value::ErrorVariant, IGoCallback, IGoCallbackWrapper};
 
 #[repr(C)]
-// NOTE: Aside from the LuaVmWrapper, Rust will deallocate everything
+// NOTE: Aside from the Lua, Rust will deallocate everything
 pub struct FunctionCallbackData {
-    // LuaVmWrapper representing the Lua State
+    // Lua representing the Lua State
     // as called from Lua.
     //
-    // This means that (future) API's like LuaVmWrapper.CurrentThread will return
-    // the correct thread when using this LuaVmWrapper.
-    pub lua: *mut LuaVmWrapper,
+    // This means that (future) API's like Lua.CurrentThread will return
+    // the correct thread when using this Lua.
+    pub lua: *mut mluau::Lua,
     // Arguments passed to the function by Lua
     pub args: *mut GoMultiValue,
 
@@ -20,17 +20,17 @@ pub struct FunctionCallbackData {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_create_function(ptr: *mut LuaVmWrapper, cb: IGoCallback) -> GoFunctionResult  {
-    // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
+pub extern "C-unwind" fn luago_create_function(ptr: *mut mluau::Lua, cb: IGoCallback) -> GoFunctionResult  {
+    // Safety: Assume ptr is a valid, non-null pointer to a Lua
     if ptr.is_null() {
-        return GoFunctionResult::err("LuaVmWrapper pointer is null".to_string());
+        return GoFunctionResult::err("Lua pointer is null".to_string());
     }
 
     let cb_wrapper = IGoCallbackWrapper::new(cb);
 
-    let lua = unsafe { &(*ptr).lua };
+    let lua = unsafe { &*ptr };
     let func = lua.create_function(move |lua, args: mluau::MultiValue| {
-        let wrapper = Box::new(LuaVmWrapper { lua: lua.clone() });
+        let wrapper = Box::new(lua.clone());
         let lua_ptr = Box::into_raw(wrapper);
         
         let data = FunctionCallbackData {
