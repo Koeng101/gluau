@@ -1,6 +1,8 @@
+use std::ffi::c_void;
+
 use mluau::Lua;
 
-use crate::{compiler::CompilerOpts, result::GoNoneResult, LuaVmWrapper};
+use crate::{compiler::CompilerOpts, result::GoNoneResult, value::ErrorVariant, IGoCallback, IGoCallbackWrapper, LuaVmWrapper};
 
 // Base functions
 
@@ -78,6 +80,68 @@ pub extern "C-unwind" fn luago_setglobals(ptr: *mut LuaVmWrapper, tab: *mut mlua
         Ok(_) => GoNoneResult::ok(),
         Err(err) => GoNoneResult::err(format!("{err}")),
     }
+}
+
+#[repr(C)]
+pub struct InterruptData {
+    // LuaVmWrapper representing the Lua State
+    // as called from Lua.
+    //
+    // This means that (future) API's like LuaVmWrapper.CurrentThread will return
+    // the correct thread when using this LuaVmWrapper.
+    pub lua: *mut LuaVmWrapper,
+
+    // Go side may set this to set a response
+    pub vm_state: u8,
+    pub error: *mut ErrorVariant,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_set_interrupt(ptr: *mut LuaVmWrapper, cb: IGoCallback)  {
+    // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
+    if ptr.is_null() {
+        return;
+    }
+
+    let cb_wrapper = IGoCallbackWrapper::new(cb);
+
+    let lua = unsafe { &(*ptr).lua };
+    lua.set_interrupt(move |lua| {
+        let wrapper = Box::new(LuaVmWrapper { lua: lua.clone() });
+        let lua_ptr = Box::into_raw(wrapper);
+        
+        let data = InterruptData {
+            lua: lua_ptr,
+            vm_state: 0, // Default state (Continue)
+            error: std::ptr::null_mut(), // No error by default
+        };
+
+        let ptr = Box::into_raw(Box::new(data));
+        cb_wrapper.callback(ptr as *mut c_void);
+        let data = unsafe { Box::from_raw(ptr) };
+
+        if !data.error.is_null() {
+            let error = unsafe { Box::from_raw(data.error) };
+            return Err(mluau::Error::external(error.error.to_string_lossy()));
+        }
+        
+        match data.vm_state {
+            0 => Ok(mluau::VmState::Continue), // Continue
+            1 => Ok(mluau::VmState::Yield),    // Yield
+            _ => Err(mluau::Error::external("Invalid VM state".to_string())),
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_remove_interrupt(ptr: *mut LuaVmWrapper)  {
+    // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
+    if ptr.is_null() {
+        return;
+    }
+
+    let lua = unsafe { &(*ptr).lua };
+    lua.remove_interrupt();
 }
 
 #[unsafe(no_mangle)]

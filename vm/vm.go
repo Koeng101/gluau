@@ -139,6 +139,84 @@ func (l *GoLuaVmWrapper) SetGlobals(tab *LuaTable) error {
 	return nil
 }
 
+type VmState int
+
+const (
+	VmStateContinue VmState = iota
+	VmStateYield            // Yield the VM execution / stop execution
+)
+
+type InterruptFn = func(funcVm *GoLuaVmWrapper) (VmState, error)
+
+// Sets an interrupt function that will periodically be called by Luau VM.
+//
+// Any Luau code is guaranteed to call this handler “eventually” (in practice this can happen at any function call or at any loop iteration).
+//
+// The provided interrupt function can error, and this error will be propagated through the Luau code that was executing at the time the interrupt was triggered.
+//
+// Also this can be used to implement continuous execution limits by instructing Luau VM to yield by returning VmState::Yield.
+func (l *GoLuaVmWrapper) SetInterrupt(callback InterruptFn) {
+	l.obj.RLock()
+	defer l.obj.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return
+	}
+
+	cbWrapper := newGoCallback(func(val unsafe.Pointer) {
+		cval := (*C.struct_InterruptData)(val)
+
+		// Safety: it is undefined behavior for the callback to unwind into
+		// Rust (or even C!) frames from Go, so we must recover() any panic
+		// that occurs in the callback to prevent a crash.
+		defer func() {
+			if r := recover(); r != nil {
+				// Deallocate any existing error
+				if cval.error != nil {
+					C.luago_error_free(cval.error)
+				}
+
+				// Replace
+				errBytes := []byte(fmt.Sprintf("panic in CreateFunction callback: %v", r))
+				errv := C.luago_error_new((*C.char)(unsafe.Pointer(&errBytes[0])), C.size_t(len(errBytes)))
+				cval.error = errv // Rust side will deallocate it for us
+			}
+		}()
+
+		callbackVm := &GoLuaVmWrapper{obj: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
+		defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
+
+		vmState, err := callback(callbackVm)
+
+		if err != nil {
+			errBytes := []byte(err.Error())
+			errv := C.luago_error_new((*C.char)(unsafe.Pointer(&errBytes[0])), C.size_t(len(errBytes)))
+			cval.error = errv // Rust side will deallocate it for us
+			return
+		}
+
+		cval.vm_state = C.uint8_t(vmState)
+	}, func() {
+		fmt.Println("interrupt callback is being dropped")
+	})
+
+	C.luago_set_interrupt(lua, cbWrapper.ToC())
+}
+
+// Removes the interrupt function set by SetInterrupt.
+func (l *GoLuaVmWrapper) RemoveInterrupt() {
+	l.obj.RLock()
+	defer l.obj.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return // No-op if the Lua VM is closed
+	}
+
+	C.luago_remove_interrupt(lua)
+}
+
 // CreateString creates a Lua string from a Go string.
 func (l *GoLuaVmWrapper) CreateString(s string) (*LuaString, error) {
 	return l.createString([]byte(s))

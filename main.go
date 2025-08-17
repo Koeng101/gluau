@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"time"
 
 	// Import to ensure callback package is initialized
@@ -391,5 +392,54 @@ func main() {
 	fmt.Println("Associated data from Lua user data:", associatedData)
 	if associatedData != "test data" {
 		panic(fmt.Sprintf("Expected associated data 'test data', got '%v'", associatedData))
+	}
+
+	// Interrupt API
+	vm.SetInterrupt(func(funcVm *vmlib.GoLuaVmWrapper) (vmlib.VmState, error) {
+		return vmlib.VmStateContinue, errors.New("test interrupt error")
+	})
+
+	// Create a Lua function that will trigger the interrupt
+	luaFunc.Close() // Close the previous function to avoid memory leaks
+	luaFunc, err = vm.LoadChunk(vmlib.ChunkOpts{
+		Name: "test_interrupt",
+		Code: "while true do end", // Infinite loop to trigger the interrupt
+		Env:  globTab,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	// Call the Lua function to trigger the interrupt
+	_, err = luaFunc.Call([]vmlib.Value{})
+	if err != nil {
+		if !strings.Contains(err.Error(), "test interrupt error") {
+			panic(fmt.Sprintf("Expected interrupt error, got: %v", err))
+		}
+		fmt.Println("Lua function call error (expected due to interrupt):", err)
+	} else {
+		panic("Expected an error from the Lua function call due to interrupt")
+	}
+
+	// Set a new interrupt which will yield the execution
+	// after 100 milliseconds
+	timeNow := time.Now()
+	vm.SetInterrupt(func(funcVm *vmlib.GoLuaVmWrapper) (vmlib.VmState, error) {
+		if time.Since(timeNow) > 10*time.Millisecond {
+			fmt.Println("Interrupt triggered after 1 second")
+			return vmlib.VmStateYield, nil // Yield the execution after 100 milliseconds
+		}
+		return vmlib.VmStateContinue, nil // Continue execution
+	})
+
+	// Call the Lua function again to trigger the interrupt
+	//
+	// Currently, as gluau does not implement LuaThread yet, this will yield a attempt to yield
+	// across metamethod/C-call boundary
+	_, err = luaFunc.Call([]vmlib.Value{})
+	if err != nil {
+		fmt.Println("Lua function call error (expected due to interrupt):", err)
+	} else {
+		panic("Expected an error from the Lua function call due to interrupt")
 	}
 }

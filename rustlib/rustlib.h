@@ -262,3 +262,15 @@ struct ChunkOpts {
     struct ChunkString* code;
 };
 struct GoFunctionResult luago_load_chunk(struct LuaVmWrapper* ptr, struct ChunkOpts opts);
+
+// Interrupt API
+struct InterruptData {
+    // Pointer to the LuaVmWrapper
+    struct LuaVmWrapper* lua;
+
+    // Go side may set this to set a response
+    uint8_t vm_state;
+    struct ErrorVariant *error; // NOTE: Rust will deallocate this
+};
+void luago_set_interrupt(struct LuaVmWrapper* ptr, struct IGoCallback cb);
+void luago_remove_interrupt(struct LuaVmWrapper* ptr);
