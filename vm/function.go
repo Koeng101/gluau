@@ -4,7 +4,10 @@ package vm
 #include "../rustlib/rustlib.h"
 */
 import "C"
-import "unsafe"
+import (
+	"fmt"
+	"unsafe"
+)
 
 var functionTab = objectTab{
 	dtor: func(ptr *C.void) {
@@ -13,6 +16,8 @@ var functionTab = objectTab{
 }
 
 // A LuaFunction is an wrapper around a function
+//
+// API's to be implemented as of now: coverage, info (more complex to implement),
 type LuaFunction struct {
 	object *object
 	lua    *GoLuaVmWrapper
@@ -51,9 +56,108 @@ func (l *LuaFunction) Call(args []Value) ([]Value, error) {
 	return retsMw, nil
 }
 
+// Returns a deep clone to a Lua-owned function
+//
+// If called on a Luau function, this method copies the function prototype and all its upvalues to the
+// newly created function
+//
+// If called on a Go function, this method merely clones the function's handle
+func (l *LuaFunction) DeepClone() (*LuaFunction, error) {
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	ptr, err := l.innerPtr()
+	if err != nil {
+		return nil, err // Return error if the object is closed
+	}
+
+	res := C.luago_function_deepclone(ptr)
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return nil, err
+	}
+
+	return &LuaFunction{object: newObject((*C.void)(unsafe.Pointer(res.value)), functionTab), lua: l.lua}, nil
+}
+
+// Returns the environment table of the LuaFunction.
+//
+// If the function has no environment, it returns nil and Go functions will never have
+// an environment table either.
+func (l *LuaFunction) Environment() (*LuaTable, error) {
+	l.object.RLock()
+	defer l.object.RUnlock()
+	ptr, err := l.innerPtr()
+	if err != nil {
+		return nil, err // Return error if the object is closed
+	}
+
+	tab := C.luago_function_environment(ptr)
+	if tab == nil {
+		return nil, nil // No environment table
+	}
+
+	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(tab)), tableTab), lua: l.lua}, nil
+}
+
+// Sets the environment table of the LuaFunction returning true if the environment was set
+func (l *LuaFunction) SetEnvironment(env *LuaTable) (bool, error) {
+	l.object.RLock()
+	defer l.object.RUnlock()
+	ptr, err := l.innerPtr()
+	if err != nil {
+		return false, err // Return error if the object is closed
+	}
+
+	if env == nil {
+		return false, nil // No environment to set
+	}
+	env.object.RLock()
+	defer env.object.RUnlock()
+	envPtr, err := env.object.PointerNoLock()
+	if err != nil {
+		return false, err // Return error if the environment table is closed
+	}
+
+	res := C.luago_function_set_environment(ptr, (*C.struct_LuaTable)(unsafe.Pointer(envPtr)))
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return false, err
+	}
+
+	return bool(res.value), nil
+}
+
+// Returns a 'pointer' to a Lua-owned function
+//
+// This pointer is only useful for hashing/debugging
+// and cannot be converted back to the original Lua function object.
+func (l *LuaFunction) Pointer() uint64 {
+	l.object.RLock()
+	defer l.object.RUnlock()
+	lptr, err := l.innerPtr()
+	if err != nil {
+		return 0 // Return error if the object is closed
+	}
+
+	ptr := C.luago_function_to_pointer(lptr)
+	return uint64(ptr)
+}
+
 // ToValue converts the LuaFunction to a Value.
 func (l *LuaFunction) ToValue() Value {
 	return &ValueFunction{value: l}
+}
+
+// String returns a string representation of the LuaFunction.
+//
+// This is currently just the pointer address of the function.
+func (l *LuaFunction) String() string {
+	ptr := l.Pointer()
+	if ptr == 0 {
+		return "<closed LuaFunction>"
+	}
+	return fmt.Sprintf("LuaFunction 0x%x", ptr)
 }
 
 func (l *LuaFunction) Close() error {

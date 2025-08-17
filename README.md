@@ -11,7 +11,7 @@ gluau provides Go bindings for the Luau (dialect of Lua) programming language
 - Lua Strings (along with API's)
 - Lua Tables (along with API's)
 - Lua Functions (API's are WIP, but basic creating from both Luau and Go and calling functions is implemented)
-- Lua userdata (API's are WIP, but basic creating/handling from Go is implemented)
+- Lua userdata (along with API's)
 
 ## Value Ownership Semantics
 

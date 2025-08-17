@@ -8,6 +8,8 @@ import (
 )
 
 // Ergonomic userdata handling
+//
+// WARNING: This is an experimental and completely untested feature.
 type TypedUserData[T any] struct {
 	data         *T                                                                      // the actual data
 	fields       map[string]vm.Value                                                     // fields of the user data
@@ -98,18 +100,20 @@ func (tud *TypedUserData[T]) Create(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData, er
 }
 
 func (tud *TypedUserData[T]) createFast(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData, error) {
+	typeName := tud.typename
+
 	udMt, err := lua.CreateTable()
 	if err != nil {
 		return nil, err
 	}
-	err = udMt.Set(vm.GoString("__type"), vm.GoString(tud.typename))
+	err = udMt.Set(vm.GoString("__type"), vm.GoString(typeName))
 	if err != nil {
 		return nil, err
 	}
 
 	for key, value := range tud.metamethods {
 		callback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
-			self, args, err := ParseSelf[T](tud.typename, args)
+			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
 			}
@@ -139,7 +143,7 @@ func (tud *TypedUserData[T]) createFast(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 
 	for key, method := range tud.methods {
 		callback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
-			self, args, err := ParseSelf[T](tud.typename, args)
+			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
 			}
@@ -162,7 +166,7 @@ func (tud *TypedUserData[T]) createFast(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 	// Handle field setters (which are handled via __newindex)
 	if len(tud.fieldSetters) != 0 {
 		newIndexCallback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
-			self, args, err := ParseSelf[T](tud.typename, args)
+			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
 			}
@@ -202,11 +206,13 @@ func (tud *TypedUserData[T]) createFast(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 }
 
 func (tud *TypedUserData[T]) createSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData, error) {
+	typeName := tud.typename
+
 	udMt, err := lua.CreateTable()
 	if err != nil {
 		return nil, err
 	}
-	err = udMt.Set(vm.GoString("__type"), vm.GoString(tud.typename))
+	err = udMt.Set(vm.GoString("__type"), vm.GoString(typeName))
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +223,7 @@ func (tud *TypedUserData[T]) createSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 		}
 
 		callback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
-			self, args, err := ParseSelf[T](tud.typename, args)
+			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
 			}
@@ -237,7 +243,7 @@ func (tud *TypedUserData[T]) createSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 	fieldGetterFuncs := make(map[string]*vm.LuaFunction)
 	for key, getter := range tud.fieldGetters {
 		callback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
-			self, _, err := ParseSelf[T](tud.typename, args)
+			self, _, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
 			}
@@ -259,7 +265,7 @@ func (tud *TypedUserData[T]) createSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 	var methodFuncs = make(map[string]*vm.LuaFunction)
 	for key, method := range tud.methods {
 		callback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
-			self, args, err := ParseSelf[T](tud.typename, args)
+			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
 			}
@@ -274,7 +280,7 @@ func (tud *TypedUserData[T]) createSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 	}
 
 	indexCallback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
-		_, args, err := ParseSelf[T](tud.typename, args)
+		_, args, err := ParseSelf[T](typeName, args)
 		if err != nil {
 			return nil, err
 		}
@@ -311,7 +317,7 @@ func (tud *TypedUserData[T]) createSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 	// Handle field setters (which are handled via __newindex)
 	if len(tud.fieldSetters) != 0 {
 		newIndexCallback := func(funcVm *vm.GoLuaVmWrapper, args []vm.Value) ([]vm.Value, error) {
-			self, args, err := ParseSelf[T](tud.typename, args)
+			self, args, err := ParseSelf[T](typeName, args)
 			if err != nil {
 				return nil, err
 			}

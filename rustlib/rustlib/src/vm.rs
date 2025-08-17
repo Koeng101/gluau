@@ -44,6 +44,43 @@ pub extern "C-unwind" fn luavm_setmemorylimit(ptr: *mut LuaVmWrapper, limit: usi
 }
 
 #[unsafe(no_mangle)]
+pub extern "C-unwind" fn luavm_sandbox(ptr: *mut LuaVmWrapper, enabled: bool) -> GoNoneResult {
+    // Safety: Assume the Lua VM is valid and we can set its sandbox mode.
+    if ptr.is_null() {
+        return GoNoneResult::err("LuaVmWrapper pointer is null".to_string());
+    }
+    let lua = unsafe { &(*ptr).lua };
+    match lua.sandbox(enabled) {
+        Ok(_) => GoNoneResult::ok(),
+        Err(err) => GoNoneResult::err(format!("{err}")),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_globals(ptr: *mut LuaVmWrapper) -> *mut mluau::Table {
+    // Safety: Assume the Lua VM is valid and we can access its globals.
+    if ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let lua = unsafe { &(*ptr).lua };
+    Box::into_raw(Box::new(lua.globals()))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_setglobals(ptr: *mut LuaVmWrapper, tab: *mut mluau::Table) -> GoNoneResult {
+    // Safety: Assume the Lua VM is valid and we can access its globals.
+    if ptr.is_null() {
+        return GoNoneResult::err("LuaVmWrapper pointer is null".to_string());
+    }
+    let lua = unsafe { &(*ptr).lua };
+    let tab = unsafe { &*tab };
+    match lua.set_globals(tab.clone()) {
+        Ok(_) => GoNoneResult::ok(),
+        Err(err) => GoNoneResult::err(format!("{err}")),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C-unwind" fn freeluavm(ptr: *mut LuaVmWrapper) {
     // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
     // and that ownership is being transferred back to Rust to be dropped.

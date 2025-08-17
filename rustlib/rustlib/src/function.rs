@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use crate::{multivalue::GoMultiValue, result::{GoFunctionResult, GoMultiValueResult}, value::ErrorVariant, IGoCallback, IGoCallbackWrapper, LuaVmWrapper};
+use crate::{multivalue::GoMultiValue, result::{GoBoolResult, GoFunctionResult, GoMultiValueResult}, value::ErrorVariant, IGoCallback, IGoCallbackWrapper, LuaVmWrapper};
 
 #[repr(C)]
 // NOTE: Aside from the LuaVmWrapper, Rust will deallocate everything
@@ -91,6 +91,69 @@ pub extern "C-unwind" fn luago_function_call(ptr: *mut mluau::Function, args: *m
         Ok(mv) => GoMultiValueResult::ok(GoMultiValue::inst(mv)),
         Err(e) => GoMultiValueResult::err(format!("{e}"))
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_function_deepclone(f: *mut mluau::Function) -> GoFunctionResult {
+    if f.is_null() {
+        return GoFunctionResult::err("LuaFunction pointer is null".to_string());
+    }
+
+    let lua_f = unsafe { &*f };
+
+    let cloned_fn = lua_f.deep_clone();
+
+    match cloned_fn {
+        Ok(func) => GoFunctionResult::ok(Box::into_raw(Box::new(func))),
+        Err(e) => GoFunctionResult::err(format!("{e}")),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_function_environment(f: *mut mluau::Function) -> *mut mluau::Table {
+    if f.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let lua_f = unsafe { &*f };
+
+    let env = lua_f.environment();
+
+    match env {
+        Some(table) => Box::into_raw(Box::new(table)),
+        None => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_function_set_environment(f: *mut mluau::Function, table: *mut mluau::Table) -> GoBoolResult {
+    if f.is_null() {
+        return GoBoolResult::err("LuaFunction pointer is null".to_string());
+    }
+
+    let lua_f = unsafe { &*f };
+    let table = unsafe { &*table };
+
+    let res = lua_f.set_environment(table.clone());
+
+    match res {
+        Ok(res) => GoBoolResult::ok(res),
+        Err(e) => GoBoolResult::err(format!("{e}")),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_function_to_pointer(f: *mut mluau::Function) -> usize {
+    // Safety: Assume function is a valid, non-null pointer to a Lua function
+    if f.is_null() {
+        return 0;
+    }
+
+    let lua_f = unsafe { &*f };
+
+    let ptr = lua_f.to_pointer();
+
+    ptr as usize
 }
 
 #[unsafe(no_mangle)]

@@ -1,6 +1,6 @@
 use std::{ffi::{c_void, CString}, sync::Arc};
 
-use crate::{string::LuaStringBytes, LuaVmWrapper};
+use crate::string::LuaStringBytes;
 
 #[repr(C)]
 pub enum LuaValueType {
@@ -354,38 +354,3 @@ pub extern "C-unwind" fn luago_error_free(error: *mut ErrorVariant) {
         drop(Box::from_raw(error));
     }
 }
-
-#[repr(C)]
-pub struct DebugValue {
-    values: [GoLuaValue; 4],
-}
-
-// test api
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_dbg_value(ptr: *mut LuaVmWrapper) -> DebugValue {
-    // Create a dummy Lua value for testing purposes
-        // Safety: Assume ptr is a valid, non-null pointer to a LuaVmWrapper
-    // and that s points to a valid C string of length len.
-    let res = unsafe {
-        let lua = &(*ptr).lua;
-        lua.create_string("Testing testing 123").unwrap()
-    };
-
-    let stupid_table = unsafe {
-        let lua = &(*ptr).lua;
-        lua.create_table_with_capacity(0, 0).unwrap()
-    };
-
-    stupid_table.set("test", mluau::Value::Integer(33)).unwrap();
-    stupid_table.set("test2", "teststring").unwrap();
-
-    DebugValue {
-        values: [
-            GoLuaValue::from_owned(mluau::Value::String(res)),
-            GoLuaValue::from_owned(mluau::Value::Error(mluau::Error::external("This is a test error".to_string()).into())),
-            GoLuaValue::from_owned(mluau::Value::Integer(2939398)),
-            GoLuaValue::from_owned(mluau::Value::Table(stupid_table)),
-        ]
-    }
-}
-

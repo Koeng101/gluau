@@ -58,6 +58,41 @@ func (l *LuaUserData) AssociatedData() (any, error) {
 	return data, nil
 }
 
+// Returns a 'pointer' to a Lua-owned userdata
+//
+// This pointer is only useful for hashing/debugging
+// and cannot be converted back to the original Lua userdata object.
+func (l *LuaUserData) Pointer() uint64 {
+	l.object.RLock()
+	defer l.object.RUnlock()
+	lptr, err := l.object.PointerNoLock()
+	if err != nil {
+		return 0 // Return 0 if the object is closed
+	}
+
+	ptr := C.luago_userdata_to_pointer((*C.struct_LuaUserData)(unsafe.Pointer(lptr)))
+	return uint64(ptr)
+}
+
+// Metatable returns the metatable of the LuaUserData.
+func (l *LuaUserData) Metatable() (*LuaTable, error) {
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	ptr, err := l.innerPtr()
+	if err != nil {
+		return nil, err // Return error if the object is closed
+	}
+
+	res := C.luago_userdata_metatable(ptr)
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return nil, err
+	}
+
+	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab), lua: l.lua}, nil
+}
+
 // ToValue converts the LuaUserData to a Value.
 func (l *LuaUserData) ToValue() Value {
 	return &ValueUserData{value: l}

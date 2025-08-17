@@ -20,6 +20,9 @@ struct CompilerOpts {
 struct LuaVmWrapper* newluavm();
 void luavm_setcompileropts(struct LuaVmWrapper* ptr, struct CompilerOpts opts);
 struct GoNoneResult luavm_setmemorylimit(struct LuaVmWrapper* ptr, size_t limit);
+struct GoNoneResult luavm_sandbox(struct LuaVmWrapper* ptr, bool enabled);
+struct LuaTable* luago_globals(struct LuaVmWrapper* ptr);
+struct GoNoneResult luago_setglobals(struct LuaVmWrapper* ptr, struct LuaTable* globals);
 void freeluavm(struct LuaVmWrapper* ptr);
 
 typedef void (*Callback)(void* val, uintptr_t handle);
@@ -106,14 +109,6 @@ struct ErrorVariant* luago_error_new(const char* str, size_t len);
 struct LuaStringBytes luago_error_get_string(struct ErrorVariant* ptr);
 void luago_error_free(struct ErrorVariant* ptr);
 
-struct DebugValue {
-    // Array of two GoLuaValues for debugging purposes
-    struct GoLuaValue values[4];
-};
-
-// Debug API
-struct DebugValue luago_dbg_value(struct LuaVmWrapper* ptr);
-
 // Table API
 struct LuaTable;
 struct GoTableResult luago_create_table(struct LuaVmWrapper* ptr);
@@ -168,6 +163,10 @@ struct FunctionCallbackData {
 };
 struct GoFunctionResult luago_create_function(struct LuaVmWrapper* ptr, struct IGoCallback cb);
 struct GoMultiValueResult luago_function_call(struct LuaFunction* ptr, struct GoMultiValue* args);
+uintptr_t luago_function_to_pointer(struct LuaFunction* ptr);
+struct GoFunctionResult luago_function_deepclone(struct LuaFunction* ptr);
+struct LuaTable* luago_function_environment(struct LuaFunction* ptr);
+struct GoBoolResult luago_function_set_environment(struct LuaFunction* ptr, struct LuaTable* table);
 void luago_free_function(struct LuaFunction* f);
 
 // Userdata API
@@ -178,6 +177,8 @@ struct DynamicData {
 };
 struct GoUserDataResult luago_create_userdata(struct LuaVmWrapper* ptr, struct DynamicData data, struct LuaTable* mt);
 struct GoUsizePtrResult luago_get_userdata_handle(struct LuaUserData* ptr);
+uintptr_t luago_userdata_to_pointer(struct LuaUserData* ptr);
+struct GoTableResult luago_userdata_metatable(struct LuaUserData* ptr);
 void luago_free_userdata(struct LuaUserData* ptr);
 
 // Result types

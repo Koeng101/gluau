@@ -5,6 +5,7 @@ package vm
 */
 import "C"
 import (
+	"errors"
 	"fmt"
 	"unsafe"
 )
@@ -58,6 +59,79 @@ func (l *GoLuaVmWrapper) SetMemoryLimit(limit int) error {
 		return err
 	}
 	res := C.luavm_setmemorylimit(lua, C.size_t(limit))
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return err
+	}
+	return nil
+}
+
+// Sandbox enables or disables the sandbox mode for the Luau VM.
+//
+// This method, in particular:
+//
+// - Set all libraries to read-only
+// - Set all builtin metatables to read-only
+// - Set globals to read-only (and activates safeenv)
+// - Setup local environment table that performs writes locally and proxies reads to the global environment.
+// - Allow only count mode in collectgarbage function.
+//
+// Note that this is a Luau-specific feature.
+func (l *GoLuaVmWrapper) Sandbox(enabled bool) error {
+	l.obj.RLock()
+	defer l.obj.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return err
+	}
+	res := C.luavm_sandbox(lua, C.bool(enabled))
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return err
+	}
+	return nil
+}
+
+// Globals returns the global environment table of the Lua VM.
+func (l *GoLuaVmWrapper) Globals(enabled bool) *LuaTable {
+	l.obj.RLock()
+	defer l.obj.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return nil
+	}
+	globals := C.luago_globals(lua)
+	if globals == nil {
+		return nil // Return nil if the globals table is not available
+	}
+	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(globals)), tableTab), lua: l}
+}
+
+// SetGlobals sets the global environment table of the Lua VM.
+//
+// Note that any existing Lua functions have cached global environment and will not see the changes made by this method.
+//
+// To update the environment for existing Lua functions, use LuaFunction.SetEnvironment
+func (l *GoLuaVmWrapper) SetGlobals(tab *LuaTable) error {
+	l.obj.RLock()
+	defer l.obj.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return nil
+	}
+	if tab == nil {
+		return errors.New("globals table cannot be nil")
+	}
+	defer tab.object.RUnlock()
+	tab.object.RLock()
+	tabPtr, err := tab.innerPtr()
+	if err != nil {
+		return err // Return error if the table is closed
+	}
+	res := C.luago_setglobals(lua, tabPtr)
 	if res.error != nil {
 		err := moveErrorToGoError(res.error)
 		return err
@@ -334,23 +408,6 @@ func (l *GoLuaVmWrapper) CreateUserData(associatedData any, mt *LuaTable) (*LuaU
 		lua:    l,
 		object: newObject((*C.void)(unsafe.Pointer(res.value)), userdataTab),
 	}, nil
-}
-
-func (l *GoLuaVmWrapper) DebugValue() [4]Value {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
-
-	lua, err := l.lua()
-	if err != nil {
-		panic(err.Error()) // This should not happen in normal operation
-	}
-
-	v := C.luago_dbg_value(lua)
-	values := [4]Value{}
-	for i, v := range v.values {
-		values[i] = l.valueFromC(v)
-	}
-	return values
 }
 
 func (l *GoLuaVmWrapper) Close() error {

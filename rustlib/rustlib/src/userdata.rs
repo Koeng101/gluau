@@ -1,4 +1,4 @@
-use crate::{result::{GoAnyUserDataResult, GoUsizePtrResult}, LuaVmWrapper};
+use crate::{result::{GoAnyUserDataResult, GoTableResult, GoUsizePtrResult}, LuaVmWrapper};
 
 /// DynamicData stores the cgo handle + callback for dynamic userdata functions.
 #[repr(C)]
@@ -52,8 +52,39 @@ pub extern "C-unwind" fn luago_get_userdata_handle(ud: *mut mluau::AnyUserData) 
 }
 
 #[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_userdata_to_pointer(userdata: *mut mluau::AnyUserData) -> usize {
+    // Safety: Assume userdata is a valid, non-null pointer to a Lua userdata
+    if userdata.is_null() {
+        return 0;
+    }
+
+    let lua_userdata = unsafe { &*userdata };
+
+    let ptr = lua_userdata.to_pointer();
+
+    ptr as usize
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_userdata_metatable(userdata: *mut mluau::AnyUserData) -> GoTableResult {
+    // Safety: Assume userdata is a valid, non-null pointer to a Lua userdata
+    if userdata.is_null() {
+        return GoTableResult::err("LuaUserData pointer is null".to_string());
+    }
+
+    let lua_userdata = unsafe { &*userdata };
+    // SAFETY: Luau does not have __gc metamethod, so this is safe to call here.
+    let mt = unsafe { lua_userdata.underlying_metatable() };
+
+    match mt {
+        Ok(mt) => GoTableResult::ok(Box::into_raw(Box::new(mt))),
+        Err(e) => GoTableResult::err(e.to_string()),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C-unwind" fn luago_free_userdata(ud: *mut mluau::AnyUserData) {
-    // Safety: Assume userdata is a valid, non-null pointer to a Lua Table
+    // Safety: Assume userdata is a valid, non-null pointer to a Lua userdata
     if ud.is_null() {
         return;
     }
