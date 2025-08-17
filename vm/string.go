@@ -74,10 +74,10 @@ func (l *LuaString) ToValue() Value {
 	return &ValueString{value: l}
 }
 
-func (l *LuaString) Close() {
+func (l *LuaString) Close() error {
 	if l == nil || l.object == nil {
-		return // Nothing to close
+		return nil // Nothing to close
 	}
 	// Close the LuaString object
-	l.object.Close()
+	return l.object.Close()
 }

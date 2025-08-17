@@ -180,7 +180,11 @@ type FunctionFn = func(funcVm *GoLuaVmWrapper, args []Value) ([]Value, error)
 
 // CreateFunction creates a new Function
 //
-// Note that funcVm will only be open until the callback function returns
+// # Note that funcVm will only be open until the callback function returns
+//
+// Locking behavior: All values returned by the callback function
+// will be write-locked (taken ownership of). Having any sort of read-lock
+// during a return will cause a error to be returned to Luau
 func (l *GoLuaVmWrapper) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 	l.obj.RLock()
 	defer l.obj.RUnlock()
@@ -216,7 +220,7 @@ func (l *GoLuaVmWrapper) CreateFunction(callback FunctionFn) (*LuaFunction, erro
 		args := mw.take()
 
 		callbackVm := &GoLuaVmWrapper{obj: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
-		defer callbackVm.Close() // Free the memory associated with the callback VM
+		defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
 
 		values, err := callback(callbackVm, args)
 
@@ -349,13 +353,13 @@ func (l *GoLuaVmWrapper) DebugValue() [4]Value {
 	return values
 }
 
-func (l *GoLuaVmWrapper) Close() {
+func (l *GoLuaVmWrapper) Close() error {
 	if l == nil || l.obj == nil {
-		return // Nothing to close
+		return nil // Nothing to close
 	}
 
 	// Close the Lua VM object
-	l.obj.Close()
+	return l.obj.Close()
 }
 
 func CreateLuaVm() (*GoLuaVmWrapper, error) {

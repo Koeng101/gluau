@@ -56,10 +56,10 @@ func (l *LuaFunction) ToValue() Value {
 	return &ValueFunction{value: l}
 }
 
-func (l *LuaFunction) Close() {
+func (l *LuaFunction) Close() error {
 	if l == nil || l.object == nil {
-		return // Nothing to close
+		return nil // Nothing to close
 	}
 	// Close the LuaFunction object
-	l.object.Close()
+	return l.object.Close()
 }

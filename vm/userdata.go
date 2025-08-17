@@ -63,10 +63,10 @@ func (l *LuaUserData) ToValue() Value {
 	return &ValueUserData{value: l}
 }
 
-func (l *LuaUserData) Close() {
+func (l *LuaUserData) Close() error {
 	if l == nil || l.object == nil {
-		return // Nothing to close
+		return nil // Nothing to close
 	}
 	// Close the LuaUserData object
-	l.object.Close()
+	return l.object.Close()
 }

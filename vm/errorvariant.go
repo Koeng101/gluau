@@ -41,10 +41,10 @@ func (l *ErrorVariant) String() string {
 	return string(bytes)
 }
 
-func (l *ErrorVariant) Close() {
+func (l *ErrorVariant) Close() error {
 	if l == nil || l.object == nil {
-		return // Nothing to close
+		return nil // Nothing to close
 	}
 	// Close the LuaTable object
-	l.object.Close()
+	return l.object.Close()
 }

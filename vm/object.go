@@ -66,13 +66,16 @@ func (o *object) UnsafePointer() (*C.void, error) {
 }
 
 // Close cleans up the Object by calling the destructor and setting the pointer to nil.
-func (o *object) Close() {
+func (o *object) Close() error {
 	// Safety: Close() can only be called if no one is reading/using the object.
-	o.RWMutex.Lock()
+	ok := o.RWMutex.TryLock()
+	if !ok {
+		return errors.New("recursive lock detected, cannot close object")
+	}
 	defer o.RWMutex.Unlock()
 
 	if o.ptr == nil {
-		return
+		return nil
 	}
 
 	if o.tab.dtor != nil {
@@ -81,6 +84,7 @@ func (o *object) Close() {
 	o.ptr = nil                  // Prevent double free
 	o.closed = true              // Mark as closed
 	runtime.SetFinalizer(o, nil) // Remove finalizer to prevent double calls
+	return nil
 }
 
 // Disarm disarms the object by setting the pointer to nil

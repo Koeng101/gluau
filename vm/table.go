@@ -619,10 +619,10 @@ func (l *LuaTable) ToValue() Value {
 	return &ValueTable{value: l}
 }
 
-func (l *LuaTable) Close() {
+func (l *LuaTable) Close() error {
 	if l == nil || l.object == nil {
-		return // Nothing to close
+		return nil // Nothing to close
 	}
 	// Close the LuaTable object
-	l.object.Close()
+	return l.object.Close()
 }

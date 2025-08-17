@@ -74,7 +74,7 @@ func (l LuaValueType) String() string {
 
 type Value interface {
 	Type() LuaValueType
-	Close()
+	Close() error
 	object() *object // Returns the underlying object for this value
 }
 
@@ -87,7 +87,7 @@ func NewValueNil() *ValueNil {
 func (v *ValueNil) Type() LuaValueType {
 	return LuaValueNil
 }
-func (v *ValueNil) Close() {}
+func (v *ValueNil) Close() error { return nil }
 func (v *ValueNil) object() *object {
 	return nil // Nil has no underlying object
 }
@@ -107,7 +107,7 @@ func (v *ValueBoolean) Value() bool {
 func (v *ValueBoolean) Type() LuaValueType {
 	return LuaValueBoolean
 }
-func (v *ValueBoolean) Close() {}
+func (v *ValueBoolean) Close() error { return nil }
 func (v *ValueBoolean) object() *object {
 	return nil // Boolean has no underlying object
 }
@@ -130,7 +130,7 @@ func (v *ValueLightUserData) Value() unsafe.Pointer {
 func (v *ValueLightUserData) Type() LuaValueType {
 	return LuaValueLightUserData
 }
-func (v *ValueLightUserData) Close() {}
+func (v *ValueLightUserData) Close() error { return nil }
 func (v *ValueLightUserData) object() *object {
 	return nil // LightUserData has no underlying object
 }
@@ -150,7 +150,7 @@ func (v *ValueInteger) Value() int64 {
 func (v *ValueInteger) Type() LuaValueType {
 	return LuaValueInteger
 }
-func (v *ValueInteger) Close() {}
+func (v *ValueInteger) Close() error { return nil }
 func (v *ValueInteger) object() *object {
 	return nil // Integer has no underlying object
 }
@@ -171,7 +171,7 @@ func (v *ValueNumber) Value() float64 {
 func (v *ValueNumber) Type() LuaValueType {
 	return LuaValueNumber
 }
-func (v *ValueNumber) Close() {}
+func (v *ValueNumber) Close() error { return nil }
 func (v *ValueNumber) object() *object {
 	return nil // Number has no underlying object
 }
@@ -194,7 +194,7 @@ func (v *ValueVector) Value() [3]float32 {
 func (v *ValueVector) Type() LuaValueType {
 	return LuaValueVector
 }
-func (v *ValueVector) Close() {}
+func (v *ValueVector) Close() error { return nil }
 func (v *ValueVector) object() *object {
 	return nil // Vector has no underlying object
 }
@@ -211,8 +211,8 @@ func (v *ValueString) Value() *LuaString {
 func (v *ValueString) Type() LuaValueType {
 	return LuaValueString
 }
-func (v *ValueString) Close() {
-	v.value.Close()
+func (v *ValueString) Close() error {
+	return v.value.Close()
 }
 func (v *ValueString) object() *object {
 	return v.value.object
@@ -229,8 +229,8 @@ func (v *ValueTable) Value() *LuaTable {
 func (v *ValueTable) Type() LuaValueType {
 	return LuaValueTable
 }
-func (v *ValueTable) Close() {
-	v.value.Close()
+func (v *ValueTable) Close() error {
+	return v.value.Close()
 }
 func (v *ValueTable) object() *object {
 	if v.value == nil {
@@ -249,8 +249,8 @@ func (v *ValueFunction) Value() *LuaFunction {
 func (v *ValueFunction) Type() LuaValueType {
 	return LuaValueFunction
 }
-func (v *ValueFunction) Close() {
-	v.value.Close()
+func (v *ValueFunction) Close() error {
+	return v.value.Close()
 }
 func (v *ValueFunction) object() *object {
 	return v.value.object
@@ -263,8 +263,9 @@ type ValueThread struct {
 func (v *ValueThread) Type() LuaValueType {
 	return LuaValueThread
 }
-func (v *ValueThread) Close() {
+func (v *ValueThread) Close() error {
 	// TODO: Implement thread
+	return nil
 }
 func (v *ValueThread) object() *object {
 	return nil // Thread has no underlying object
@@ -281,8 +282,8 @@ func (v *ValueUserData) Value() *LuaUserData {
 func (v *ValueUserData) Type() LuaValueType {
 	return LuaValueUserData
 }
-func (v *ValueUserData) Close() {
-	v.value.Close() // Close the LuaUserData
+func (v *ValueUserData) Close() error {
+	return v.value.Close() // Close the LuaUserData
 }
 func (v *ValueUserData) object() *object {
 	return v.value.object // Return the underlying object of the LuaUserData
@@ -295,8 +296,9 @@ type ValueBuffer struct {
 func (v *ValueBuffer) Type() LuaValueType {
 	return LuaValueBuffer
 }
-func (v *ValueBuffer) Close() {
+func (v *ValueBuffer) Close() error {
 	// TODO: Implement buffer
+	return nil
 }
 func (v *ValueBuffer) object() *object {
 	return nil // Buffer has no underlying object
@@ -313,8 +315,8 @@ func (v *ValueError) Value() *ErrorVariant {
 func (v *ValueError) Type() LuaValueType {
 	return LuaValueError
 }
-func (v *ValueError) Close() {
-	v.value.Close()
+func (v *ValueError) Close() error {
+	return v.value.Close()
 }
 func (v *ValueError) object() *object {
 	return v.value.object
@@ -327,7 +329,7 @@ type ValueOther struct {
 func (v *ValueOther) Type() LuaValueType {
 	return LuaValueOther
 }
-func (v *ValueOther) Close() {}
+func (v *ValueOther) Close() error { return nil }
 func (v *ValueOther) object() *object {
 	return nil // Other has no underlying object
 }
@@ -337,12 +339,15 @@ type GoString string
 func (v GoString) Type() LuaValueType {
 	return LuaValueCustom_GoString
 }
-func (v GoString) Close() {}
+func (v GoString) Close() error { return nil }
 func (v GoString) object() *object {
 	return nil // GoString has no underlying object
 }
 
 // CloneValue clones a vmlib.Value to a new vmlib.Value
+//
+// Locking behavior: CloneValue acquires a read lock on the object
+// being cloned (value) to ensure it is not closed while cloning.
 func CloneValue(l *GoLuaVmWrapper, value Value) (Value, error) {
 	if value == nil {
 		return nil, errors.New("cannot clone nil value")
@@ -362,9 +367,6 @@ func CloneValue(l *GoLuaVmWrapper, value Value) (Value, error) {
 	clonedCVal := cloneValue(cVal)
 
 	clonedValue := l.valueFromC(clonedCVal)
-	if clonedValue == nil {
-		return nil, errors.New("failed to clone value")
-	}
 
 	return clonedValue, nil
 }
