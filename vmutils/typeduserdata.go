@@ -11,7 +11,7 @@ import (
 //
 // WARNING: This is an experimental and completely untested feature.
 type TypedUserData[T any] struct {
-	data         *T                                                                      // the actual data
+	mt           *vm.LuaTable                                                            // cached/shared metatable for the user data
 	fields       map[string]vm.Value                                                     // fields of the user data
 	fieldGetters map[string]func(*T) (vm.Value, error)                                   // field getters
 	fieldSetters map[string]func(*T, *vm.GoLuaVmWrapper, vm.Value) error                 // field setters
@@ -91,15 +91,31 @@ func (tud *TypedUserData[T]) indexFastPath() bool {
 }
 
 // Creates a new UserData
-func (tud *TypedUserData[T]) Create(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData, error) {
-	if tud.indexFastPath() {
-		return tud.createFast(lua)
-	} else {
-		return tud.createSlow(lua)
+func (tud *TypedUserData[T]) Create(lua *vm.GoLuaVmWrapper, data *T) (*vm.LuaUserData, error) {
+	if tud.mt == nil {
+		if tud.indexFastPath() {
+			mt, err := tud.createMtFast(lua)
+			if err != nil {
+				return nil, err
+			}
+			tud.mt = mt
+		} else {
+			mt, err := tud.createMtSlow(lua)
+			if err != nil {
+				return nil, err
+			}
+			tud.mt = mt
+		}
 	}
+
+	ud, err := lua.CreateUserData(data, tud.mt)
+	if err != nil {
+		return nil, err
+	}
+	return ud, nil
 }
 
-func (tud *TypedUserData[T]) createFast(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData, error) {
+func (tud *TypedUserData[T]) createMtFast(lua *vm.GoLuaVmWrapper) (*vm.LuaTable, error) {
 	typeName := tud.typename
 
 	udMt, err := lua.CreateTable()
@@ -107,6 +123,10 @@ func (tud *TypedUserData[T]) createFast(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 		return nil, err
 	}
 	err = udMt.Set(vm.GoString("__type"), vm.GoString(typeName))
+	if err != nil {
+		return nil, err
+	}
+	err = udMt.Set(vm.GoString("__metatable"), vm.NewValueBoolean(false))
 	if err != nil {
 		return nil, err
 	}
@@ -202,10 +222,10 @@ func (tud *TypedUserData[T]) createFast(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 		}
 	}
 
-	return lua.CreateUserData(tud.data, udMt)
+	return udMt, nil
 }
 
-func (tud *TypedUserData[T]) createSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData, error) {
+func (tud *TypedUserData[T]) createMtSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaTable, error) {
 	typeName := tud.typename
 
 	udMt, err := lua.CreateTable()
@@ -213,6 +233,10 @@ func (tud *TypedUserData[T]) createSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 		return nil, err
 	}
 	err = udMt.Set(vm.GoString("__type"), vm.GoString(typeName))
+	if err != nil {
+		return nil, err
+	}
+	err = udMt.Set(vm.GoString("__metatable"), vm.NewValueBoolean(false))
 	if err != nil {
 		return nil, err
 	}
@@ -353,13 +377,12 @@ func (tud *TypedUserData[T]) createSlow(lua *vm.GoLuaVmWrapper) (*vm.LuaUserData
 		}
 	}
 
-	return lua.CreateUserData(tud.data, udMt)
+	return udMt, nil
 }
 
 // Creates a new TypedUserData which can be used to ergonomically build user data
-func NewTypedUserData[T any](data *T) *TypedUserData[T] {
+func NewTypedUserData[T any]() *TypedUserData[T] {
 	return &TypedUserData[T]{
-		data:         data,
 		fields:       make(map[string]vm.Value),
 		fieldGetters: make(map[string]func(*T) (vm.Value, error)),
 		fieldSetters: make(map[string]func(*T, *vm.GoLuaVmWrapper, vm.Value) error),
