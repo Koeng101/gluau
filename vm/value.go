@@ -76,6 +76,8 @@ type Value interface {
 	Type() LuaValueType
 	Close() error
 	object() *object // Returns the underlying object for this value
+	String() string  // Returns a string representation of the value
+	Equals(other Value) (bool, error)
 }
 
 // ValueNil represents a Lua nil value.
@@ -93,6 +95,12 @@ func (v *ValueNil) object() *object {
 }
 func (v *ValueNil) String() string {
 	return "ValueNil"
+}
+func (v *ValueNil) Equals(other Value) (bool, error) {
+	if other == nil {
+		return true, nil
+	}
+	return other.Type() == LuaValueNil, nil // Only equal to other nil values
 }
 
 type ValueBoolean struct {
@@ -120,6 +128,16 @@ func (v *ValueBoolean) String() string {
 	}
 	return "ValueBoolean: false"
 }
+func (v *ValueBoolean) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any boolean
+	}
+	if other.Type() != LuaValueBoolean {
+		return false, nil // Only equal to other booleans
+	}
+	otherBool := other.(*ValueBoolean)
+	return v.value == otherBool.value, nil // Compare boolean values
+}
 
 // ValueLightUserData is a pointer to an arbitrary C data type.
 type ValueLightUserData struct {
@@ -142,6 +160,22 @@ func (v *ValueLightUserData) Type() LuaValueType {
 func (v *ValueLightUserData) Close() error { return nil }
 func (v *ValueLightUserData) object() *object {
 	return nil // LightUserData has no underlying object
+}
+func (v *ValueLightUserData) String() string {
+	if v.value == nil {
+		return "ValueLightUserData: <nil>"
+	}
+	return fmt.Sprintf("ValueLightUserData: %p", v.value)
+}
+func (v *ValueLightUserData) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any light user data
+	}
+	if other.Type() != LuaValueLightUserData {
+		return false, nil // Only equal to other light user data
+	}
+	otherData := other.(*ValueLightUserData)
+	return v.value == otherData.value, nil // Compare pointers
 }
 
 // ValueInteger represents a Lua integer value.
@@ -166,6 +200,21 @@ func (v *ValueInteger) object() *object {
 func (v *ValueInteger) String() string {
 	return fmt.Sprintf("ValueInteger: %d", v.value)
 }
+func (v *ValueInteger) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any integer
+	}
+	switch other.Type() {
+	case LuaValueInteger:
+		otherInt := other.(*ValueInteger)
+		return v.value == otherInt.value, nil // Compare integer values
+	case LuaValueNumber:
+		otherNum := other.(*ValueNumber)
+		return float64(v.value) == otherNum.value, nil // Compare integer with number
+	default:
+		return false, nil // Only equal to other integers or numbers
+	}
+}
 
 // ValueNumber represents a Lua number value.
 type ValueNumber struct {
@@ -189,6 +238,21 @@ func (v *ValueNumber) object() *object {
 }
 func (v *ValueNumber) String() string {
 	return fmt.Sprintf("ValueNumber: %f", v.value)
+}
+func (v *ValueNumber) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any number
+	}
+	switch other.Type() {
+	case LuaValueNumber:
+		otherNum := other.(*ValueNumber)
+		return v.value == otherNum.value, nil // Compare number values
+	case LuaValueInteger:
+		otherInt := other.(*ValueInteger)
+		return v.value == float64(otherInt.value), nil // Compare number with integer
+	default:
+		return false, nil // Only equal to other numbers or integers
+	}
 }
 
 // ValueVector represents a Luau vector value (3D vector).
@@ -216,6 +280,16 @@ func (v *ValueVector) object() *object {
 func (v *ValueVector) String() string {
 	return fmt.Sprintf("ValueVector: [%f, %f, %f]", v.value[0], v.value[1], v.value[2])
 }
+func (v *ValueVector) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any vector
+	}
+	if other.Type() != LuaValueVector {
+		return false, nil // Only equal to other vectors
+	}
+	otherVec := other.(*ValueVector)
+	return v.value == otherVec.value, nil // Compare vector values
+}
 
 // ValueString represents a Lua string value.
 type ValueString struct {
@@ -240,6 +314,27 @@ func (v *ValueString) String() string {
 		return "<nil ValueString>"
 	}
 	return "ValueString: " + v.value.String()
+}
+func (v *ValueString) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any string
+	}
+	switch other.Type() {
+	case LuaValueString:
+		otherStr := other.(*ValueString)
+		if v.value == nil || otherStr.value == nil {
+			return v.value == nil && otherStr.value == nil, nil // Both nil are equal
+		}
+		return v.value.Equals(otherStr.value), nil // Compare string content
+	case LuaValueCustom_GoString:
+		otherGoStr := other.(GoString)
+		if v.value == nil {
+			return false, nil // Nil string is not equal to GoString
+		}
+		return v.value.String() == string(otherGoStr), nil // Compare LuaString with GoString
+	default:
+		return false, nil // Only equal to other strings or GoStrings
+	}
 }
 
 // ValueTable represents a Lua table value.
@@ -268,6 +363,19 @@ func (v *ValueTable) String() string {
 	}
 	return "ValueTable: " + v.value.String()
 }
+func (v *ValueTable) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any table
+	}
+	if other.Type() != LuaValueTable {
+		return false, nil // Only equal to other tables
+	}
+	otherTable := other.(*ValueTable)
+	if v.value == nil || otherTable.value == nil {
+		return v.value == nil && otherTable.value == nil, nil // Both nil are equal
+	}
+	return v.value.Equals(otherTable.value) // Compare table content
+}
 
 type ValueFunction struct {
 	value *LuaFunction
@@ -290,6 +398,19 @@ func (v *ValueFunction) String() string {
 		return "<nil ValueFunction>"
 	}
 	return "ValueFunction: " + v.value.String()
+}
+func (v *ValueFunction) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any function
+	}
+	if other.Type() != LuaValueFunction {
+		return false, nil // Only equal to other functions
+	}
+	otherFunc := other.(*ValueFunction)
+	if v.value == nil || otherFunc.value == nil {
+		return v.value == nil && otherFunc.value == nil, nil // Both nil are equal
+	}
+	return v.value.Equals(otherFunc.value), nil // Compare function content
 }
 
 type ValueThread struct {
@@ -315,6 +436,19 @@ func (v *ValueThread) String() string {
 	}
 	return "ValueThread: " + v.value.String()
 }
+func (v *ValueThread) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any thread
+	}
+	if other.Type() != LuaValueThread {
+		return false, nil // Only equal to other threads
+	}
+	otherThread := other.(*ValueThread)
+	if v.value == nil || otherThread.value == nil {
+		return v.value == nil && otherThread.value == nil, nil // Both nil are equal
+	}
+	return v.value.Equals(otherThread.value), nil // Compare thread content
+}
 
 type ValueUserData struct {
 	value *LuaUserData
@@ -339,6 +473,19 @@ func (v *ValueUserData) String() string {
 	}
 	return "ValueUserData: " + v.value.String()
 }
+func (v *ValueUserData) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any userdata
+	}
+	if other.Type() != LuaValueUserData {
+		return false, nil // Only equal to other userdata
+	}
+	otherUserData := other.(*ValueUserData)
+	if v.value == nil || otherUserData.value == nil {
+		return v.value == nil && otherUserData.value == nil, nil // Both nil are equal
+	}
+	return v.value.Equals(otherUserData.value), nil // Compare userdata content
+}
 
 type ValueBuffer struct {
 	value *C.void // TODO
@@ -353,6 +500,12 @@ func (v *ValueBuffer) Close() error {
 }
 func (v *ValueBuffer) object() *object {
 	return nil // Buffer has no underlying object
+}
+func (v *ValueBuffer) String() string {
+	return "ValueBuffer: <not implemented>" // TODO: Implement buffer string representation
+}
+func (v *ValueBuffer) Equals(other Value) (bool, error) {
+	return false, fmt.Errorf("ValueBuffer does not support equality comparison") // TODO: Implement buffer equality
 }
 
 // ValueError represents a Lua error value.
@@ -372,6 +525,25 @@ func (v *ValueError) Close() error {
 func (v *ValueError) object() *object {
 	return v.value.object
 }
+func (v *ValueError) String() string {
+	if v.value == nil {
+		return "<nil ValueError>"
+	}
+	return "ValueError: " + v.value.String()
+}
+func (v *ValueError) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any error
+	}
+	if other.Type() != LuaValueError {
+		return false, nil // Only equal to other errors
+	}
+	otherError := other.(*ValueError)
+	if v.value == nil || otherError.value == nil {
+		return v.value == nil && otherError.value == nil, nil // Both nil are equal
+	}
+	return v.value.Equals(otherError.value), nil // Compare error content
+}
 
 type ValueOther struct {
 	value *C.void // TODO
@@ -384,6 +556,12 @@ func (v *ValueOther) Close() error { return nil }
 func (v *ValueOther) object() *object {
 	return nil // Other has no underlying object
 }
+func (v *ValueOther) String() string {
+	return "ValueOther: <not implemented>" // TODO: Implement other value string representation
+}
+func (v *ValueOther) Equals(other Value) (bool, error) {
+	return false, fmt.Errorf("ValueOther does not support equality comparison") // TODO: Implement other value equality
+}
 
 type GoString string
 
@@ -393,6 +571,27 @@ func (v GoString) Type() LuaValueType {
 func (v GoString) Close() error { return nil }
 func (v GoString) object() *object {
 	return nil // GoString has no underlying object
+}
+func (v GoString) String() string {
+	return string(v) // Convert GoString to string
+}
+func (v GoString) Equals(other Value) (bool, error) {
+	if other == nil {
+		return false, nil // Nil is not equal to any GoString
+	}
+	switch other.Type() {
+	case LuaValueCustom_GoString:
+		otherGoStr := other.(GoString)
+		return string(v) == string(otherGoStr), nil // Compare GoString content
+	case LuaValueString:
+		otherStr := other.(*ValueString)
+		if otherStr.value == nil {
+			return false, nil // Nil LuaString is not equal to GoString
+		}
+		return string(v) == otherStr.value.String(), nil // Compare GoString with LuaString
+	default:
+		return false, nil // Only equal to other GoStrings or LuaStrings
+	}
 }
 
 // CloneValue clones a vmlib.Value to a new vmlib.Value

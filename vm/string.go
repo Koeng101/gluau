@@ -1,7 +1,6 @@
 package vm
 
 import (
-	"fmt"
 	"unsafe"
 )
 
@@ -24,7 +23,6 @@ type LuaString struct {
 
 // Returns the LuaString as a byte slice
 func (l *LuaString) Bytes() []byte {
-	fmt.Println("l.lua:", l.lua)
 	if l.lua.object.IsClosed() {
 		return nil // Return nil if the Lua VM is closed
 	}

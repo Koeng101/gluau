@@ -21,6 +21,18 @@ type Lua struct {
 	object *object
 }
 
+// Returns the string representation of the Lua VM.
+func (l *Lua) String() string {
+	if l == nil || l.object == nil {
+		return "<nil Lua VM>"
+	}
+	pt := l.MainThread().Pointer()
+	if pt == 0 {
+		return "<closed Lua VM>"
+	}
+	return fmt.Sprintf("Lua VM: 0x%x", pt)
+}
+
 func (l *Lua) lua() (*C.struct_Lua, error) {
 	ptr, err := l.object.PointerNoLock()
 	if err != nil {

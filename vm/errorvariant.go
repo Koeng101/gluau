@@ -41,6 +41,19 @@ func (l *ErrorVariant) String() string {
 	return string(bytes)
 }
 
+// Equals checks if the ErrorVariant equals another ErrorVariant
+//
+// Equivalent to l.String() == other.String().
+func (l *ErrorVariant) Equals(other *ErrorVariant) bool {
+	if l == nil && other == nil {
+		return true // Both are nil
+	}
+	if l == nil || other == nil {
+		return false // One is nil, the other is not
+	}
+	return l.String() == other.String() // Compare string representations
+}
+
 func (l *ErrorVariant) Close() error {
 	if l == nil || l.object == nil {
 		return nil // Nothing to close
