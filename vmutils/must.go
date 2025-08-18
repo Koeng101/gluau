@@ -1,3 +1,5 @@
+//go:build cgo
+
 package vmutils
 
 // Panics if err != nil, else returns obj

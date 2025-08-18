@@ -1,0 +1,9 @@
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-s"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-s"]
+
+[alias]
+# Create a custom command, e.g., "build-std-release"
+build-std-release = "build --release -Z build-std=std,panic_unwind -Z build-std-features=optimize_for_size"

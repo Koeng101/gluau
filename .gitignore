@@ -1,4 +1,6 @@
 target
+target-*
 rustlib/rustlib/target
 go-rust
+go-rust-*
 gluau
