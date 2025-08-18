@@ -298,3 +298,7 @@ struct InterruptData {
 };
 void luago_set_interrupt(struct Lua* ptr, struct IGoCallback cb);
 void luago_remove_interrupt(struct Lua* ptr);
+
+// Registry
+struct GoNoneResult luago_set_named_registry_value(struct Lua* ptr, const char* key, size_t keylen, struct GoLuaValue value);
+struct GoValueResult luago_named_registry_value(struct Lua* ptr, const char* key, size_t keylen);

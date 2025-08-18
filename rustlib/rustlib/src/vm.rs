@@ -1,8 +1,8 @@
-use std::ffi::c_void;
+use std::ffi::{c_char, c_void};
 
 use mluau::Lua;
 
-use crate::{compiler::CompilerOpts, multivalue::GoMultiValue, result::GoNoneResult, value::ErrorVariant, IGoCallback, IGoCallbackWrapper};
+use crate::{compiler::CompilerOpts, multivalue::GoMultiValue, result::{GoNoneResult, GoValueResult}, value::{ErrorVariant, GoLuaValue}, IGoCallback, IGoCallbackWrapper};
 
 // Base functions
 
@@ -220,6 +220,51 @@ pub extern "C-unwind" fn luago_set_type_metatable(ptr: *mut mluau::Lua, typ: u8,
         6 => lua.set_type_metatable::<mluau::Thread>(tab),
         7 => lua.set_type_metatable::<mluau::Buffer>(tab),
         _ => return
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_set_named_registry_value(ptr: *mut mluau::Lua, key: *const c_char, keylen: usize, value: GoLuaValue) -> GoNoneResult {
+    if ptr.is_null() {
+        return GoNoneResult::err("Lua pointer is null".to_string());
+    }
+
+    let lua = unsafe { &*ptr };
+    let value = value.to_value_from_owned();
+    let key = if key.is_null() {
+        unsafe { std::str::from_utf8_unchecked(&[]) }
+    } else {
+        let key = unsafe { std::slice::from_raw_parts(key as *const u8, keylen) };
+        match std::str::from_utf8(key) {
+            Ok(s) => s,
+            Err(_) => return GoNoneResult::err("Invalid UTF-8 key".to_string()),
+        }
+    };
+    match lua.set_named_registry_value(key, value) {
+        Ok(_) => GoNoneResult::ok(),
+        Err(err) => GoNoneResult::err(format!("{err}")),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_named_registry_value(ptr: *mut mluau::Lua, key: *const c_char, keylen: usize) -> GoValueResult {
+    if ptr.is_null() {
+        return GoValueResult::err("Lua pointer is null".to_string());
+    }
+
+    let lua = unsafe { &*ptr };
+    let key = if key.is_null() {
+        unsafe { std::str::from_utf8_unchecked(&[]) }
+    } else {
+        let key = unsafe { std::slice::from_raw_parts(key as *const u8, keylen) };
+        match std::str::from_utf8(key) {
+            Ok(s) => s,
+            Err(_) => return GoValueResult::err("Invalid UTF-8 key".to_string()),
+        }
+    };
+    match lua.named_registry_value::<mluau::Value>(key) {
+        Ok(v) => GoValueResult::ok(GoLuaValue::from_owned(v)),
+        Err(err) => GoValueResult::err(format!("{err}")),
     }
 }
 

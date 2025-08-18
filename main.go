@@ -576,11 +576,11 @@ func main() {
 	// Test set type metatable
 	vm2, err := vmlib.CreateLuaVm()
 	if err != nil {
-		panic(vm2)
+		panic(err)
 	}
 	myTypeMt, err := vm2.CreateTable()
 	if err != nil {
-		panic(vm2)
+		panic(err)
 	}
 	vmutils.MustOk(
 		myTypeMt.Set(
@@ -608,4 +608,38 @@ func main() {
 	}
 
 	vm2.Close()
+
+	// Test registry API
+	vm3, err := vmlib.CreateLuaVm()
+	if err != nil {
+		panic(err)
+	}
+
+	val := vmutils.Must(vm3.RegistryValue("test"))
+	if ok, _ := val.Equals(&vmlib.ValueNil{}); !ok {
+		panic("val is not nil")
+	}
+	vmutils.MustOk(vm3.SetRegistryValue("", vmlib.GoString("foo")))
+	val = vmutils.Must(vm3.RegistryValue("test"))
+	if ok, _ := val.Equals(&vmlib.ValueNil{}); !ok {
+		panic("val is not nil")
+	}
+	val = vmutils.Must(vm3.RegistryValue(""))
+	if ok, _ := val.Equals(vmlib.GoString("foo")); !ok {
+		panic("val is not foo")
+	}
+
+	vmutils.MustOk(vm3.SetRegistryValue("test", vmlib.GoString("foo")))
+	val = vmutils.Must(vm3.RegistryValue("test"))
+	if ok, _ := val.Equals(vmlib.GoString("foo")); !ok {
+		panic("val is not foo")
+	}
+
+	vmutils.MustOk(vm3.RemoveRegistryValue("test"))
+	val = vmutils.Must(vm3.RegistryValue("test"))
+	if ok, _ := val.Equals(&vmlib.ValueNil{}); !ok {
+		panic("val is not nil")
+	}
+
+	vm3.Close()
 }

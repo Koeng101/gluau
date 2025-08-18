@@ -151,6 +151,72 @@ func (l *Lua) SetTypeMetatable(typ TypeMetatableType, mt *LuaTable) error {
 	return nil
 }
 
+// SetRegistryValue sets a value on the Lua registry with a given key name
+func (l *Lua) SetRegistryValue(key string, value Value) error {
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return err
+	}
+
+	valueVal, err := l.valueToC(value)
+	if err != nil {
+		return err // Return error if the value cannot be converted (diff lua state, closed object, etc)
+	}
+
+	if len(key) == 0 {
+		res := C.luago_set_named_registry_value(lua, (*C.char)(nil), 0, valueVal)
+		if res.error != nil {
+			err := moveErrorToGoError(res.error)
+			return err
+		}
+		return nil
+	}
+	keyBytes := []byte(key)
+	res := C.luago_set_named_registry_value(lua, (*C.char)(unsafe.Pointer(&keyBytes[0])), C.size_t(len(key)), valueVal)
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return err
+	}
+	return nil
+}
+
+// RegistryValue returns a value on the Lua registry with a given key name
+func (l *Lua) RegistryValue(key string) (Value, error) {
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(key) == 0 {
+		res := C.luago_named_registry_value(lua, (*C.char)(nil), 0)
+		if res.error != nil {
+			err := moveErrorToGoError(res.error)
+			return nil, err
+		}
+		return l.valueFromC(res.value), nil
+	}
+	keyBytes := []byte(key)
+	res := C.luago_named_registry_value(lua, (*C.char)(unsafe.Pointer(&keyBytes[0])), C.size_t(len(key)))
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return nil, err
+	}
+	return l.valueFromC(res.value), nil
+}
+
+// RemoveRegistryValue removes a value on the Lua registry with a given key name
+//
+// Equivalent to SetRegistryValue with value of nil
+func (l *Lua) RemoveRegistryValue(key string) error {
+	return l.SetRegistryValue(key, &ValueNil{})
+}
+
 // Sandbox enables or disables the sandbox mode for the Luau VM.
 //
 // This method, in particular:
