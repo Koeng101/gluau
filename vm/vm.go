@@ -18,11 +18,11 @@ var luaVmTab = objectTab{
 
 // A handle to the Lua VM.
 type Lua struct {
-	obj *object
+	object *object
 }
 
 func (l *Lua) lua() (*C.struct_Lua, error) {
-	ptr, err := l.obj.PointerNoLock()
+	ptr, err := l.object.PointerNoLock()
 	if err != nil {
 		return nil, err // Return error if the object is closed
 	}
@@ -33,8 +33,8 @@ func (l *Lua) lua() (*C.struct_Lua, error) {
 //
 // This is a Luau-specific feature
 func (l *Lua) SetCompilerOpts(opts CompilerOpts) {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -51,8 +51,8 @@ func (l *Lua) SetCompilerOpts(opts CompilerOpts) {
 // back to the caller (which may either be in Luau still or in Go
 // as a error value).
 func (l *Lua) SetMemoryLimit(limit int) error {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -78,8 +78,8 @@ func (l *Lua) SetMemoryLimit(limit int) error {
 //
 // Note that this is a Luau-specific feature.
 func (l *Lua) Sandbox(enabled bool) error {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -94,9 +94,9 @@ func (l *Lua) Sandbox(enabled bool) error {
 }
 
 // Globals returns the global environment table of the Lua VM.
-func (l *Lua) Globals(enabled bool) *LuaTable {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+func (l *Lua) Globals() *LuaTable {
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -115,8 +115,8 @@ func (l *Lua) Globals(enabled bool) *LuaTable {
 //
 // To update the environment for existing Lua functions, use LuaFunction.SetEnvironment
 func (l *Lua) SetGlobals(tab *LuaTable) error {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -146,7 +146,7 @@ const (
 	VmStateYield            // Yield the VM execution / stop execution
 )
 
-type InterruptFn = func(funcVm *Lua) (VmState, error)
+type InterruptFn = func(funcVm *CallbackLua) (VmState, error)
 
 // Sets an interrupt function that will periodically be called by Luau VM.
 //
@@ -156,8 +156,8 @@ type InterruptFn = func(funcVm *Lua) (VmState, error)
 //
 // Also this can be used to implement continuous execution limits by instructing Luau VM to yield by returning VmState::Yield.
 func (l *Lua) SetInterrupt(callback InterruptFn) {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -184,10 +184,15 @@ func (l *Lua) SetInterrupt(callback InterruptFn) {
 			}
 		}()
 
-		callbackVm := &Lua{obj: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
+		callbackVm := &Lua{object: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
 		defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
 
-		vmState, err := callback(callbackVm)
+		cbLua := &CallbackLua{
+			mainstate: l,          // The main Lua VM that owns this callback
+			cbstate:   callbackVm, // The callback Lua VM that is used to execute the callback
+		}
+
+		vmState, err := callback(cbLua)
 
 		if err != nil {
 			errBytes := []byte(err.Error())
@@ -206,8 +211,8 @@ func (l *Lua) SetInterrupt(callback InterruptFn) {
 
 // Removes the interrupt function set by SetInterrupt.
 func (l *Lua) RemoveInterrupt() {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -215,6 +220,26 @@ func (l *Lua) RemoveInterrupt() {
 	}
 
 	C.luago_remove_interrupt(lua)
+}
+
+// Returns the main thread of the Lua VM.
+//
+// Note: if you want the currently running thread from a callback, use CallbackLua.CurrentThread() instead.
+func (l *Lua) MainThread() *LuaThread {
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return nil // Return nil if the Lua VM is closed
+	}
+
+	thread := C.luago_current_thread(lua)
+	if thread == nil {
+		return nil // Return nil if the main thread is not available
+	}
+
+	return &LuaThread{object: newObject((*C.void)(unsafe.Pointer(thread)), threadTab), lua: l}
 }
 
 // CreateString creates a Lua string from a Go string.
@@ -229,8 +254,8 @@ func (l *Lua) CreateStringBytes(s []byte) (*LuaString, error) {
 }
 
 func (l *Lua) createString(s []byte) (*LuaString, error) {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -255,8 +280,8 @@ func (l *Lua) createString(s []byte) (*LuaString, error) {
 
 // Create string as pointer (without any finalizer)
 func (l *Lua) createStringAsPtr(s []byte) (*C.struct_LuaString, error) {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -281,8 +306,8 @@ func (l *Lua) createStringAsPtr(s []byte) (*C.struct_LuaString, error) {
 
 // CreateTable creates a new Lua table.
 func (l *Lua) CreateTable() (*LuaTable, error) {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -300,8 +325,8 @@ func (l *Lua) CreateTable() (*LuaTable, error) {
 // CreateTableWithCapacity creates a new Lua table with specified capacity for array and record parts.
 // with narr as the number of array elements and nrec as the number of record elements.
 func (l *Lua) CreateTableWithCapacity(narr, nrec int) (*LuaTable, error) {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -328,7 +353,7 @@ func CreateErrorVariant(s []byte) *ErrorVariant {
 	return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
 }
 
-type FunctionFn = func(funcVm *Lua, args []Value) ([]Value, error)
+type FunctionFn = func(funcVm *CallbackLua, args []Value) ([]Value, error)
 
 // CreateFunction creates a new Function
 //
@@ -336,10 +361,10 @@ type FunctionFn = func(funcVm *Lua, args []Value) ([]Value, error)
 //
 // Locking behavior: All values returned by the callback function
 // will be write-locked (taken ownership of). Having any sort of read-lock
-// during a return will cause a error to be returned to Luau
+// to a returned argument during a return will cause a error to be returned to Luau
 func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -371,10 +396,15 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 		mw := &luaMultiValue{ptr: cval.args, lua: l}
 		args := mw.take()
 
-		callbackVm := &Lua{obj: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
+		callbackVm := &Lua{object: newObject((*C.void)(unsafe.Pointer(cval.lua)), luaVmTab)}
 		defer callbackVm.Close() // Free the memory associated with the callback VM. TODO: Maybe switch to using a Deref API instead of Close?
 
-		values, err := callback(callbackVm, args)
+		cbLua := &CallbackLua{
+			mainstate: l,          // The main Lua VM that owns this callback
+			cbstate:   callbackVm, // The callback Lua VM that is used to execute the callback
+		}
+
+		values, err := callback(cbLua, args)
 
 		if err != nil {
 			errBytes := []byte(err.Error())
@@ -405,10 +435,42 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 	return &LuaFunction{object: newObject((*C.void)(unsafe.Pointer(res.value)), functionTab), lua: l}, nil
 }
 
+// CreateThread creates a new thread from a LuaFunction
+//
+// Locking behavior: Takes a read-lock on the LuaFunction object
+// and the Lua VM object
+func (l *Lua) CreateThread(fn *LuaFunction) (*LuaThread, error) {
+	if fn == nil {
+		return nil, fmt.Errorf("function cannot be nil")
+	}
+
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return nil, err
+	}
+
+	fn.object.RLock()
+	defer fn.object.RUnlock()
+	fnPtr, err := fn.innerPtr()
+	if err != nil {
+		return nil, err // Return error if the function is closed
+	}
+
+	res := C.luago_create_thread(lua, fnPtr)
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return nil, err
+	}
+	return &LuaThread{object: newObject((*C.void)(unsafe.Pointer(res.value)), threadTab), lua: l}, nil
+}
+
 // LoadChunk loads a Lua chunk from the given options.
 func (l *Lua) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -458,8 +520,8 @@ func (l *Lua) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, er
 		return nil, fmt.Errorf("metatable cannot be nil")
 	}
 
-	l.obj.RLock()
-	defer l.obj.RUnlock()
+	l.object.RLock()
+	defer l.object.RUnlock()
 
 	lua, err := l.lua()
 	if err != nil {
@@ -489,12 +551,12 @@ func (l *Lua) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, er
 }
 
 func (l *Lua) Close() error {
-	if l == nil || l.obj == nil {
+	if l == nil || l.object == nil {
 		return nil // Nothing to close
 	}
 
 	// Close the Lua VM object
-	return l.obj.Close()
+	return l.object.Close()
 }
 
 func CreateLuaVm() (*Lua, error) {
@@ -502,6 +564,100 @@ func CreateLuaVm() (*Lua, error) {
 	if ptr == nil {
 		return nil, fmt.Errorf("failed to create Lua VM")
 	}
-	vm := &Lua{obj: newObject((*C.void)(unsafe.Pointer(ptr)), luaVmTab)}
+	vm := &Lua{object: newObject((*C.void)(unsafe.Pointer(ptr)), luaVmTab)}
 	return vm, nil
+}
+
+// A special 'borrowed' Lua VM that is passed to callbacks.
+//
+// Provides special context-specific data about the current Lua state
+type CallbackLua struct {
+	mainstate *Lua // The main Lua VM that owns this callback
+	cbstate   *Lua // The callback Lua
+}
+
+// Returns the main Lua VM state
+//
+// Note: it is not possible to get the callback Lua state directly to avoid
+// object lifetime related issues.
+//
+// Returns nil if the CallbackLua is closed (note that CallbackLua is closed automatically when the callback function returns).
+func (c *CallbackLua) MainState() *Lua {
+	if c == nil {
+		return nil // No main state if the callback Lua is nil
+	}
+	return c.mainstate
+}
+
+// Returns the currently running thread of the Lua VM.
+//
+// Returns nil if the CallbackLua is closed (note that CallbackLua is closed automatically when the callback function returns).
+func (c *CallbackLua) CurrentThread() *LuaThread {
+	if c.mainstate == nil || c.cbstate == nil {
+		return nil // No current thread if the main state or callback state is nil
+	}
+
+	c.cbstate.object.RLock()
+	defer c.cbstate.object.RUnlock()
+	c.mainstate.object.RLock()
+	defer c.mainstate.object.RUnlock()
+
+	lua, err := c.cbstate.lua()
+	if err != nil {
+		return nil // Return nil if the Lua VM is closed
+	}
+
+	thread := C.luago_current_thread(lua)
+	if thread == nil {
+		return nil // Return nil if the callback thread is not available
+	}
+
+	return &LuaThread{object: newObject((*C.void)(unsafe.Pointer(thread)), threadTab), lua: c.mainstate}
+}
+
+// Sets the arguments to yield the thread with.
+//
+// Notes:
+// - the yield will only occur after return.
+// - the arguments returned will be ignored internally (as such, you should just return a empty value list after calling this method).
+func (c *CallbackLua) YieldWith(args []Value) error {
+	if c == nil || c.cbstate == nil {
+		return fmt.Errorf("callback Lua VM is closed")
+	}
+
+	c.cbstate.object.RLock()
+	defer c.cbstate.object.RUnlock()
+
+	lua, err := c.cbstate.lua()
+	if err != nil {
+		return err // Return error if the callback Lua VM is closed
+	}
+
+	mw, err := c.cbstate.multiValueFromValues(args)
+	if err != nil {
+		return err // Return error if the values cannot be converted
+	}
+
+	res := C.luago_yield_with(lua, mw.ptr)
+	if res.error != nil {
+		return moveErrorToGoError(res.error) // Return error if the yield failed
+	}
+	return nil
+}
+
+// Closes the CallbackLua object.
+//
+// Note: this is automatically called when the callback function returns,
+func (c *CallbackLua) Close() error {
+	if c == nil || c.cbstate == nil {
+		return nil // Nothing to close
+	}
+	// Close the callback Lua VM object
+	err := c.cbstate.Close()
+	if err != nil {
+		return err // Return error if the callback Lua VM is closed
+	}
+	// Nil out the mainstate to allow GC
+	c.mainstate = nil
+	return nil
 }

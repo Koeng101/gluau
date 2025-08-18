@@ -2,7 +2,7 @@ use std::ffi::c_void;
 
 use mluau::Lua;
 
-use crate::{compiler::CompilerOpts, result::GoNoneResult, value::ErrorVariant, IGoCallback, IGoCallbackWrapper};
+use crate::{compiler::CompilerOpts, multivalue::GoMultiValue, result::GoNoneResult, value::ErrorVariant, IGoCallback, IGoCallbackWrapper};
 
 // Base functions
 
@@ -142,6 +142,36 @@ pub extern "C-unwind" fn luago_remove_interrupt(ptr: *mut mluau::Lua)  {
 
     let lua = unsafe { &*ptr };
     lua.remove_interrupt();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_current_thread(ptr: *mut mluau::Lua) -> *mut mluau::Thread {
+    // Safety: Assume ptr is a valid, non-null pointer to a Lua
+    if ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let lua = unsafe { &*ptr };
+    Box::into_raw(Box::new(lua.current_thread()))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_yield_with(ptr: *mut mluau::Lua, args: *mut GoMultiValue) -> GoNoneResult {
+    // Safety: Assume ptr is a valid, non-null pointer to a Lua
+    if ptr.is_null() {
+        return GoNoneResult::err("Lua pointer is null".to_string());
+    }
+
+    let lua = unsafe { &*ptr };
+    // Safety: Go side must ensure values cannot be used after it is set
+    // here as a return value
+    let values = unsafe { Box::from_raw(args) };
+    let values_mv = values.values.into_inner().unwrap();
+
+    match lua.yield_with(values_mv) {
+        Ok(_) => GoNoneResult::ok(),
+        Err(err) => GoNoneResult::err(format!("{err}")),
+    }
 }
 
 #[unsafe(no_mangle)]

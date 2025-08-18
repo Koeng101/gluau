@@ -216,6 +216,28 @@ impl GoMultiValueResult {
 }
 
 #[repr(C)]
+pub struct GoThreadResult {
+    value: *mut mluau::Thread,
+    error: *mut c_char
+}
+
+impl GoThreadResult {
+    pub fn ok(t: *mut mluau::Thread) -> Self {
+        Self {
+            value: t,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: String) -> Self {
+        Self {
+            value: std::ptr::null_mut(),
+            error: to_error(error),
+        }
+    }
+}
+
+#[repr(C)]
 pub struct GoValueResult {
     value: GoLuaValue,
     error: *mut c_char

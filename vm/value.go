@@ -91,6 +91,9 @@ func (v *ValueNil) Close() error { return nil }
 func (v *ValueNil) object() *object {
 	return nil // Nil has no underlying object
 }
+func (v *ValueNil) String() string {
+	return "ValueNil"
+}
 
 type ValueBoolean struct {
 	value bool
@@ -110,6 +113,12 @@ func (v *ValueBoolean) Type() LuaValueType {
 func (v *ValueBoolean) Close() error { return nil }
 func (v *ValueBoolean) object() *object {
 	return nil // Boolean has no underlying object
+}
+func (v *ValueBoolean) String() string {
+	if v.value {
+		return "ValueBoolean: true"
+	}
+	return "ValueBoolean: false"
 }
 
 // ValueLightUserData is a pointer to an arbitrary C data type.
@@ -154,6 +163,9 @@ func (v *ValueInteger) Close() error { return nil }
 func (v *ValueInteger) object() *object {
 	return nil // Integer has no underlying object
 }
+func (v *ValueInteger) String() string {
+	return fmt.Sprintf("ValueInteger: %d", v.value)
+}
 
 // ValueNumber represents a Lua number value.
 type ValueNumber struct {
@@ -174,6 +186,9 @@ func (v *ValueNumber) Type() LuaValueType {
 func (v *ValueNumber) Close() error { return nil }
 func (v *ValueNumber) object() *object {
 	return nil // Number has no underlying object
+}
+func (v *ValueNumber) String() string {
+	return fmt.Sprintf("ValueNumber: %f", v.value)
 }
 
 // ValueVector represents a Luau vector value (3D vector).
@@ -198,6 +213,9 @@ func (v *ValueVector) Close() error { return nil }
 func (v *ValueVector) object() *object {
 	return nil // Vector has no underlying object
 }
+func (v *ValueVector) String() string {
+	return fmt.Sprintf("ValueVector: [%f, %f, %f]", v.value[0], v.value[1], v.value[2])
+}
 
 // ValueString represents a Lua string value.
 type ValueString struct {
@@ -216,6 +234,12 @@ func (v *ValueString) Close() error {
 }
 func (v *ValueString) object() *object {
 	return v.value.object
+}
+func (v *ValueString) String() string {
+	if v.value == nil {
+		return "<nil ValueString>"
+	}
+	return "ValueString: " + v.value.String()
 }
 
 // ValueTable represents a Lua table value.
@@ -238,6 +262,12 @@ func (v *ValueTable) object() *object {
 	}
 	return v.value.object
 }
+func (v *ValueTable) String() string {
+	if v.value == nil {
+		return "<nil ValueTable>"
+	}
+	return "ValueTable: " + v.value.String()
+}
 
 type ValueFunction struct {
 	value *LuaFunction
@@ -255,20 +285,35 @@ func (v *ValueFunction) Close() error {
 func (v *ValueFunction) object() *object {
 	return v.value.object
 }
-
-type ValueThread struct {
-	value *C.void // TODO
+func (v *ValueFunction) String() string {
+	if v.value == nil {
+		return "<nil ValueFunction>"
+	}
+	return "ValueFunction: " + v.value.String()
 }
 
+type ValueThread struct {
+	value *LuaThread
+}
+
+// Value returns the LuaThread value of the ValueThread.
+func (v *ValueThread) Value() *LuaThread {
+	return v.value
+}
 func (v *ValueThread) Type() LuaValueType {
 	return LuaValueThread
 }
 func (v *ValueThread) Close() error {
-	// TODO: Implement thread
-	return nil
+	return v.value.Close()
 }
 func (v *ValueThread) object() *object {
-	return nil // Thread has no underlying object
+	return v.value.object
+}
+func (v *ValueThread) String() string {
+	if v.value == nil {
+		return "<nil ValueThread>"
+	}
+	return "ValueThread: " + v.value.String()
 }
 
 type ValueUserData struct {
@@ -287,6 +332,12 @@ func (v *ValueUserData) Close() error {
 }
 func (v *ValueUserData) object() *object {
 	return v.value.object // Return the underlying object of the LuaUserData
+}
+func (v *ValueUserData) String() string {
+	if v.value == nil {
+		return "<nil ValueUserData>"
+	}
+	return "ValueUserData: " + v.value.String()
 }
 
 type ValueBuffer struct {
@@ -416,9 +467,10 @@ func (l *Lua) valueFromC(item C.struct_GoLuaValue) Value {
 		funct := &LuaFunction{object: newObject(funcPtr, functionTab)}
 		return &ValueFunction{value: funct}
 	case C.LuaValueTypeThread:
-		threadPtrPtr := (**C.void)(unsafe.Pointer(&item.data))
-		threadPtr := *threadPtrPtr
-		return &ValueThread{value: threadPtr} // TODO: Support threads
+		ptrToPtr := (**C.struct_LuaThread)(unsafe.Pointer(&item.data))
+		threadPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
+		thread := &LuaThread{object: newObject(threadPtr, threadTab)}
+		return &ValueThread{value: thread}
 	case C.LuaValueTypeUserData:
 		ptrToPtr := (**C.struct_LuaUserData)(unsafe.Pointer(&item.data))
 		udPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))

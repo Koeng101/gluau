@@ -6,6 +6,7 @@ package vm
 import "C"
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 )
 
@@ -96,6 +97,14 @@ func (l *LuaUserData) Metatable() (*LuaTable, error) {
 // ToValue converts the LuaUserData to a Value.
 func (l *LuaUserData) ToValue() Value {
 	return &ValueUserData{value: l}
+}
+
+// String returns a string representation of the LuaUserData.
+func (l *LuaUserData) String() string {
+	if l == nil || l.object == nil {
+		return "<nil LuaUserData>"
+	}
+	return "LuaUserData(pointer: " + fmt.Sprintf("%#x", l.Pointer()) + ")"
 }
 
 func (l *LuaUserData) Close() error {

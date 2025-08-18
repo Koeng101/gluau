@@ -23,6 +23,7 @@ struct GoNoneResult luavm_setmemorylimit(struct Lua* ptr, size_t limit);
 struct GoNoneResult luavm_sandbox(struct Lua* ptr, bool enabled);
 struct LuaTable* luago_globals(struct Lua* ptr);
 struct GoNoneResult luago_setglobals(struct Lua* ptr, struct LuaTable* globals);
+struct LuaThread* luago_current_thread(struct Lua* ptr);
 void freeluavm(struct Lua* ptr);
 
 typedef void (*Callback)(void* val, uintptr_t handle);
@@ -181,6 +182,16 @@ uintptr_t luago_userdata_to_pointer(struct LuaUserData* ptr);
 struct GoTableResult luago_userdata_metatable(struct LuaUserData* ptr);
 void luago_free_userdata(struct LuaUserData* ptr);
 
+// Thread API
+struct LuaThread;
+struct GoThreadResult luago_create_thread(struct Lua* ptr, struct LuaFunction* func);
+uint8_t luago_thread_status(struct LuaThread* ptr);
+struct GoMultiValueResult luago_thread_resume(struct LuaThread* ptr, struct GoMultiValue* args);
+uintptr_t luago_thread_to_pointer(struct LuaThread* ptr);
+struct GoNoneResult luago_yield_with(struct Lua* ptr, struct GoMultiValue* args);
+void luago_free_thread(struct LuaThread* ptr);
+
+
 // Result types
 
 struct GoNoneResult {
@@ -213,6 +224,12 @@ struct GoTableResult {
 struct GoFunctionResult {
     // Pointer to the LuaTable value
     struct LuaFunction* value;
+    // Pointer to a null-terminated C string for the error message
+    char* error;
+};
+struct GoThreadResult {
+    // Pointer to the LuaThread value
+    struct LuaThread* value;
     // Pointer to a null-terminated C string for the error message
     char* error;
 };

@@ -8,6 +8,7 @@ pub mod multivalue;
 pub mod compiler;
 pub mod chunk;
 pub mod userdata;
+pub mod thread;
 
 use std::ffi::c_void;
 

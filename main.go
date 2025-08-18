@@ -233,7 +233,7 @@ func main() {
 	}
 	fmt.Println("empty table equals itself", equals)
 
-	myFunc, err := vm.CreateFunction(func(lua *vmlib.Lua, args []vmlib.Value) ([]vmlib.Value, error) {
+	myFunc, err := vm.CreateFunction(func(lua *vmlib.CallbackLua, args []vmlib.Value) ([]vmlib.Value, error) {
 		return []vmlib.Value{
 			vmlib.GoString("Hello world"),
 		}, nil
@@ -256,7 +256,7 @@ func main() {
 	fmt.Println("Function call response", res[0].(*vmlib.ValueString).Value().String())
 	defer res[0].Close()
 
-	myFunc, err = vm.CreateFunction(func(lua *vmlib.Lua, args []vmlib.Value) ([]vmlib.Value, error) {
+	myFunc, err = vm.CreateFunction(func(lua *vmlib.CallbackLua, args []vmlib.Value) ([]vmlib.Value, error) {
 		return nil, errors.New(args[0].(*vmlib.ValueString).Value().String())
 	})
 	if err != nil {
@@ -395,7 +395,7 @@ func main() {
 	}
 
 	// Interrupt API
-	vm.SetInterrupt(func(funcVm *vmlib.Lua) (vmlib.VmState, error) {
+	vm.SetInterrupt(func(funcVm *vmlib.CallbackLua) (vmlib.VmState, error) {
 		return vmlib.VmStateContinue, errors.New("test interrupt error")
 	})
 
@@ -424,9 +424,9 @@ func main() {
 	// Set a new interrupt which will yield the execution
 	// after 100 milliseconds
 	timeNow := time.Now()
-	vm.SetInterrupt(func(funcVm *vmlib.Lua) (vmlib.VmState, error) {
+	vm.SetInterrupt(func(funcVm *vmlib.CallbackLua) (vmlib.VmState, error) {
 		if time.Since(timeNow) > 10*time.Millisecond {
-			fmt.Println("Interrupt triggered after 1 second")
+			fmt.Println("Interrupt triggered after 1 second on thread with status", funcVm.CurrentThread().Status())
 			return vmlib.VmStateYield, nil // Yield the execution after 100 milliseconds
 		}
 		return vmlib.VmStateContinue, nil // Continue execution
@@ -434,12 +434,116 @@ func main() {
 
 	// Call the Lua function again to trigger the interrupt
 	//
-	// Currently, as gluau does not implement LuaThread yet, this will yield a attempt to yield
+	// Currently, we havent made it a LuaThread yet, this will yield a attempt to yield
 	// across metamethod/C-call boundary
 	_, err = luaFunc.Call([]vmlib.Value{})
 	if err != nil {
 		fmt.Println("Lua function call error (expected due to interrupt):", err)
 	} else {
 		panic("Expected an error from the Lua function call due to interrupt")
+	}
+
+	// Thread API
+	thread, err := vm.CreateThread(luaFunc)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lua thread: %v", err))
+	}
+	defer thread.Close() // Ensure we close the Lua thread when done
+	fmt.Println("Lua thread created successfully:", thread)
+
+	// Resume the thread with no arguments
+	//
+	// As this is now a thread that is not main thread, this wont error
+	// with a yield across metamethod/C-call boundary error anymore
+	_, err = thread.Resume([]vmlib.Value{})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to resume Lua thread: %v", err))
+	}
+	fmt.Println("Lua thread resumed successfully, returned values:", res)
+
+	thread.Close()
+
+	// Test with erroring interrupt
+	vm.SetInterrupt(func(funcVm *vmlib.CallbackLua) (vmlib.VmState, error) {
+		return vmlib.VmStateContinue, errors.New("test interrupt error")
+	})
+
+	thread, err = vm.CreateThread(luaFunc)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lua thread: %v", err))
+	}
+	defer thread.Close() // Ensure we close the Lua thread when done
+	fmt.Println("Lua thread 2 created successfully:", thread)
+
+	// Resume the thread with no arguments
+	_, err = thread.Resume([]vmlib.Value{})
+	if err != nil {
+		if !strings.Contains(err.Error(), "test interrupt error") {
+			panic(fmt.Sprintf("Expected interrupt error, got: %v", err))
+		}
+		fmt.Println("Lua thread call error (expected due to interrupt):", err)
+	} else {
+		panic("Expected an error from the Lua thread call due to interrupt")
+	}
+
+	thread.Close()
+	luaFunc.Close() // Close the Lua function to avoid memory leaks
+
+	luaFunc2, err := vm.LoadChunk(vmlib.ChunkOpts{
+		Name: "test_yield_2",
+		Code: "local yielder = ...; yielder(); return 1", // This will yield the execution
+		Env:  vm.Globals(),
+	})
+
+	if err != nil {
+		panic(fmt.Sprintf("Failed to load Lua chunk for yielding: %v", err))
+	}
+
+	defer luaFunc2.Close() // Ensure we close the Lua function when done
+
+	// A simple yielding test
+	vm.RemoveInterrupt()
+	thread2, err := vm.CreateThread(luaFunc2)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lua thread: %v", err))
+	}
+	defer thread2.Close() // Ensure we close the Lua thread when done
+	fmt.Println("Lua thread 3 created successfully:", thread2)
+	yieldFunc, err := vm.CreateFunction(func(lua *vmlib.CallbackLua, args []vmlib.Value) ([]vmlib.Value, error) {
+		lua.YieldWith([]vmlib.Value{vmlib.GoString("yielded value")})
+		return []vmlib.Value{}, nil
+	})
+
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lua yield function: %v", err))
+	}
+	defer yieldFunc.Close() // Ensure we close the Lua function when done
+	res, err = thread2.Resume([]vmlib.Value{yieldFunc.ToValue()})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to resume Lua thread with yield function: %v", err))
+	}
+	fmt.Println("Lua thread resumed successfully with yield function, returned values:", res[0])
+	if res[0].Type() != vmlib.LuaValueString {
+		panic(fmt.Sprintf("Expected LuaValueString, got %d", res[0].Type()))
+	}
+	if res[0].(*vmlib.ValueString).Value().String() != "yielded value" {
+		panic(fmt.Sprintf("Expected 'yielded value', got '%s'", res[0].(*vmlib.ValueString).Value().String()))
+	}
+
+	if thread2.Status() != vmlib.ThreadStatusResumable {
+		panic(fmt.Sprintf("Expected thread status to be running, got %s", thread2.Status().String()))
+	}
+
+	// Resume the thread again to finish it
+	res, err = thread2.Resume([]vmlib.Value{})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to resume Lua thread after yield: %v", err))
+	}
+	fmt.Println("Lua thread resumed successfully after yield, returned values:", res[0])
+	if res[0].Type() != vmlib.LuaValueInteger {
+		panic(fmt.Sprintf("Expected LuaValueInteger, got %d", res[0].Type()))
+	}
+	if res[0].(*vmlib.ValueInteger).Value() != 1 {
+		panic(fmt.Sprintf("Expected 1, got %d", res[0].(*vmlib.ValueInteger).Value()))
 	}
 }

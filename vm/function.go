@@ -33,6 +33,9 @@ func (l *LuaFunction) innerPtr() (*C.struct_LuaFunction, error) {
 
 // Call calls a function `f` returning either the returned arguments
 // or the error
+//
+// Locking behavior: This function acquires a read lock on the LuaFunction object
+// and a write lock on all arguments passed to the function.
 func (l *LuaFunction) Call(args []Value) ([]Value, error) {
 	l.object.RLock()
 	defer l.object.RUnlock()
