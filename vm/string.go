@@ -33,6 +33,9 @@ func (l *LuaString) Bytes() []byte {
 		return nil // Return nil if the object is closed
 	}
 	data := C.luago_string_as_bytes((*C.struct_LuaString)(unsafe.Pointer(ptr)))
+	if data.data == nil {
+		return nil
+	}
 	goSlice := C.GoBytes(unsafe.Pointer(data.data), C.int(data.len))
 	return goSlice
 }
@@ -49,8 +52,12 @@ func (l *LuaString) BytesWithNul() []byte {
 	if err != nil {
 		return nil // Return nil if the object is closed
 	}
-
 	data := C.luago_string_as_bytes_with_nul((*C.struct_LuaString)(unsafe.Pointer(ptr)))
+
+	if data.data == nil {
+		return nil
+	}
+
 	goSlice := C.GoBytes(unsafe.Pointer(data.data), C.int(data.len))
 	return goSlice
 }

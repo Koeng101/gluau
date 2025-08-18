@@ -497,14 +497,22 @@ func (l *Lua) CreateTableWithCapacity(narr, nrec int) (*LuaTable, error) {
 }
 
 // CreateErrorVariant creates a new ErrorVariant from a byte slice.
+//
+// In extremely rare cases, this may return nil if the error creation failed.
 func CreateErrorVariant(s []byte) *ErrorVariant {
 	if len(s) == 0 {
 		// Passing nil to luago_create_string creates an empty string.
 		res := C.luago_error_new((*C.char)(nil), C.size_t(len(s)))
+		if res == nil {
+			return nil // Return nil if the error creation failed
+		}
 		return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
 	}
 
 	res := C.luago_error_new((*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
+	if res == nil {
+		return nil // Return nil if the error creation failed
+	}
 	return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
 }
 
@@ -725,8 +733,33 @@ func (l *Lua) Close() error {
 	return l.object.Close()
 }
 
+type StdLib uint32
+
+const (
+	StdLibCoroutine StdLib = 1 << 0
+	StdLibTable     StdLib = 1 << 1
+	StdLibOS        StdLib = 1 << 2
+	StdLibString    StdLib = 1 << 3
+	StdLibUtf8      StdLib = 1 << 4
+	StdLibBit       StdLib = 1 << 5
+	StdLibMath      StdLib = 1 << 6
+	StdLibBuffer    StdLib = 1 << 7
+	StdLibVector    StdLib = 1 << 8
+	StdLibDebug     StdLib = 1 << 9
+	StdLibAll       StdLib = 1 << 31 // All standard libraries
+)
+
+// CreateLuaVm creates a new Lua VM with the entire standard library enabled.
 func CreateLuaVm() (*Lua, error) {
-	ptr := C.newluavm()
+	return CreateLuaVmComplex(StdLibAll)
+}
+
+// CreateLuaVmComplex creates a new Lua VM with the specified standard libraries enabled.
+//
+// If you want the entire stdlib to be exposed to scripts, pass `StdLibAll` here
+// or use the CreateLuaVm function.
+func CreateLuaVmComplex(stdlib StdLib) (*Lua, error) {
+	ptr := C.newluavm(C.uint32_t(stdlib))
 	if ptr == nil {
 		return nil, fmt.Errorf("failed to create Lua VM")
 	}

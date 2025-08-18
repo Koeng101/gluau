@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use crate::{multivalue::GoMultiValue, result::{GoBoolResult, GoFunctionResult, GoMultiValueResult}, value::ErrorVariant, IGoCallback, IGoCallbackWrapper};
+use crate::{multivalue::GoMultiValue, result::{wrap_failable, GoBoolResult, GoFunctionResult, GoMultiValueResult}, value::ErrorVariant, IGoCallback, IGoCallbackWrapper};
 
 #[repr(C)]
 // NOTE: Aside from the Lua, Rust will deallocate everything
@@ -20,162 +20,178 @@ pub struct FunctionCallbackData {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_create_function(ptr: *mut mluau::Lua, cb: IGoCallback) -> GoFunctionResult  {
-    // Safety: Assume ptr is a valid, non-null pointer to a Lua
-    if ptr.is_null() {
-        return GoFunctionResult::err("Lua pointer is null".to_string());
-    }
-
-    let cb_wrapper = IGoCallbackWrapper::new(cb);
-
-    let lua = unsafe { &*ptr };
-    let func = lua.create_function(move |lua, args: mluau::MultiValue| {
-        let wrapper = Box::new(lua.clone());
-        let lua_ptr = Box::into_raw(wrapper);
-        
-        let data = FunctionCallbackData {
-            lua: lua_ptr,
-            args: GoMultiValue::inst(args),
-            values: std::ptr::null_mut(),
-            error: std::ptr::null_mut(),
-        };
-
-        let ptr = Box::into_raw(Box::new(data));
-        cb_wrapper.callback(ptr as *mut c_void);
-        let data = unsafe { Box::from_raw(ptr) };
-        unsafe { drop(Box::from_raw(data.args)) }
-        
-        if !data.error.is_null() {
-            if !data.values.is_null() {
-                // Avoid a memory leak by deallocating it
-                unsafe { drop(Box::from_raw(data.values)) };
-            }
-
-            let error = unsafe { Box::from_raw(data.error) };
-            return Err(mluau::Error::external(error.error.to_string_lossy()));
-        } else {
-            // If values is set, return them to Lua.
-            if !data.values.is_null() {
-                // Safety: Go side must ensure values cannot be used after it is set
-                // here as a return value
-                let values = unsafe { Box::from_raw(data.values) };
-                let values_mv = values.values.into_inner().unwrap();
-                return Ok(values_mv);
-            } else {
-                // If no values are set, return an empty MultiValue.
-                return Ok(mluau::MultiValue::new());
-            }
+pub extern "C" fn luago_create_function(ptr: *mut mluau::Lua, cb: IGoCallback) -> GoFunctionResult  {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a Lua
+        if ptr.is_null() {
+            return GoFunctionResult::err("Lua pointer is null".to_string());
         }
-    });
 
-    match func {
-        Ok(f) => GoFunctionResult::ok(Box::into_raw(Box::new(f))),
-        Err(err) => GoFunctionResult::err(format!("{err}")),
-    }
+        let cb_wrapper = IGoCallbackWrapper::new(cb);
+
+        let lua = unsafe { &*ptr };
+        let func = lua.create_function(move |lua, args: mluau::MultiValue| {
+            let wrapper = Box::new(lua.clone());
+            let lua_ptr = Box::into_raw(wrapper);
+            
+            let data = FunctionCallbackData {
+                lua: lua_ptr,
+                args: GoMultiValue::inst(args),
+                values: std::ptr::null_mut(),
+                error: std::ptr::null_mut(),
+            };
+
+            let ptr = Box::into_raw(Box::new(data));
+            cb_wrapper.callback(ptr as *mut c_void);
+            let data = unsafe { Box::from_raw(ptr) };
+            unsafe { drop(Box::from_raw(data.args)) }
+            
+            if !data.error.is_null() {
+                if !data.values.is_null() {
+                    // Avoid a memory leak by deallocating it
+                    unsafe { drop(Box::from_raw(data.values)) };
+                }
+
+                let error = unsafe { Box::from_raw(data.error) };
+                return Err(mluau::Error::external(error.error.to_string_lossy()));
+            } else {
+                // If values is set, return them to Lua.
+                if !data.values.is_null() {
+                    // Safety: Go side must ensure values cannot be used after it is set
+                    // here as a return value
+                    let values = unsafe { Box::from_raw(data.values) };
+                    let values_mv = values.values.into_inner().unwrap();
+                    return Ok(values_mv);
+                } else {
+                    // If no values are set, return an empty MultiValue.
+                    return Ok(mluau::MultiValue::new());
+                }
+            }
+        });
+
+        match func {
+            Ok(f) => GoFunctionResult::ok(Box::into_raw(Box::new(f))),
+            Err(err) => GoFunctionResult::err(format!("{err}")),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_function_call(ptr: *mut mluau::Function, args: *mut GoMultiValue) -> GoMultiValueResult  {
-    if ptr.is_null() {
-        return GoMultiValueResult::err("Function pointer is null".to_string());
-    }
+pub extern "C" fn luago_function_call(ptr: *mut mluau::Function, args: *mut GoMultiValue) -> GoMultiValueResult  {
+    wrap_failable(|| {
+        if ptr.is_null() {
+            return GoMultiValueResult::err("Function pointer is null".to_string());
+        }
 
-    let func = unsafe { &*ptr };
-    
-    // Safety: Go side must ensure values cannot be used after it is set
-    // here as a return value
-    let values = unsafe { Box::from_raw(args) };
-    let values_mv = values.values.into_inner().unwrap();
-    let res = func.call::<mluau::MultiValue>(values_mv);
-    match res {
-        Ok(mv) => GoMultiValueResult::ok(GoMultiValue::inst(mv)),
-        Err(e) => GoMultiValueResult::err(format!("{e}"))
-    }
+        let func = unsafe { &*ptr };
+        
+        // Safety: Go side must ensure values cannot be used after it is set
+        // here as a return value
+        let values = unsafe { Box::from_raw(args) };
+        let values_mv = values.values.into_inner().unwrap();
+        let res = func.call::<mluau::MultiValue>(values_mv);
+        match res {
+            Ok(mv) => GoMultiValueResult::ok(GoMultiValue::inst(mv)),
+            Err(e) => GoMultiValueResult::err(format!("{e}"))
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_function_deepclone(f: *mut mluau::Function) -> GoFunctionResult {
-    if f.is_null() {
-        return GoFunctionResult::err("LuaFunction pointer is null".to_string());
-    }
+pub extern "C" fn luago_function_deepclone(f: *mut mluau::Function) -> GoFunctionResult {
+    wrap_failable(|| {
+        if f.is_null() {
+            return GoFunctionResult::err("LuaFunction pointer is null".to_string());
+        }
 
-    let lua_f = unsafe { &*f };
+        let lua_f = unsafe { &*f };
 
-    let cloned_fn = lua_f.deep_clone();
+        let cloned_fn = lua_f.deep_clone();
 
-    match cloned_fn {
-        Ok(func) => GoFunctionResult::ok(Box::into_raw(Box::new(func))),
-        Err(e) => GoFunctionResult::err(format!("{e}")),
-    }
+        match cloned_fn {
+            Ok(func) => GoFunctionResult::ok(Box::into_raw(Box::new(func))),
+            Err(e) => GoFunctionResult::err(format!("{e}")),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_function_environment(f: *mut mluau::Function) -> *mut mluau::Table {
-    if f.is_null() {
-        return std::ptr::null_mut();
-    }
+pub extern "C" fn luago_function_environment(f: *mut mluau::Function) -> *mut mluau::Table {
+    wrap_failable(|| {
+        if f.is_null() {
+            return std::ptr::null_mut();
+        }
 
-    let lua_f = unsafe { &*f };
+        let lua_f = unsafe { &*f };
 
-    let env = lua_f.environment();
+        let env = lua_f.environment();
 
-    match env {
-        Some(table) => Box::into_raw(Box::new(table)),
-        None => std::ptr::null_mut(),
-    }
+        match env {
+            Some(table) => Box::into_raw(Box::new(table)),
+            None => std::ptr::null_mut(),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_function_set_environment(f: *mut mluau::Function, table: *mut mluau::Table) -> GoBoolResult {
-    if f.is_null() {
-        return GoBoolResult::err("LuaFunction pointer is null".to_string());
-    }
+pub extern "C" fn luago_function_set_environment(f: *mut mluau::Function, table: *mut mluau::Table) -> GoBoolResult {
+    wrap_failable(|| {
+        if f.is_null() {
+            return GoBoolResult::err("LuaFunction pointer is null".to_string());
+        }
 
-    let lua_f = unsafe { &*f };
-    let table = unsafe { &*table };
+        let lua_f = unsafe { &*f };
+        let table = unsafe { &*table };
 
-    let res = lua_f.set_environment(table.clone());
+        let res = lua_f.set_environment(table.clone());
 
-    match res {
-        Ok(res) => GoBoolResult::ok(res),
-        Err(e) => GoBoolResult::err(format!("{e}")),
-    }
+        match res {
+            Ok(res) => GoBoolResult::ok(res),
+            Err(e) => GoBoolResult::err(format!("{e}")),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_function_to_pointer(f: *mut mluau::Function) -> usize {
-    // Safety: Assume function is a valid, non-null pointer to a Lua function
-    if f.is_null() {
-        return 0;
-    }
+pub extern "C" fn luago_function_to_pointer(f: *mut mluau::Function) -> usize {
+    wrap_failable(|| {
+        // Safety: Assume function is a valid, non-null pointer to a Lua function
+        if f.is_null() {
+            return 0;
+        }
 
-    let lua_f = unsafe { &*f };
+        let lua_f = unsafe { &*f };
 
-    let ptr = lua_f.to_pointer();
+        let ptr = lua_f.to_pointer();
 
-    ptr as usize
+        ptr as usize
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_function_equals(f: *mut mluau::Function, f2: *mut mluau::Function) -> bool {
-    // Safety: Assume table is a valid, non-null pointer to a Lua Table
-    if f.is_null() || f2.is_null() {
-        return f.is_null() && f2.is_null(); // If both are null, they are equal
-    }
+pub extern "C" fn luago_function_equals(f: *mut mluau::Function, f2: *mut mluau::Function) -> bool {
+    wrap_failable(|| {
+        // Safety: Assume table is a valid, non-null pointer to a Lua Table
+        if f.is_null() || f2.is_null() {
+            return f.is_null() && f2.is_null(); // If both are null, they are equal
+        }
 
-    let f1 = unsafe { &*f };
-    let f2 = unsafe { &*f2 };
+        let f1 = unsafe { &*f };
+        let f2 = unsafe { &*f2 };
 
-    f1 == f2
+        f1 == f2
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_free_function(f: *mut mluau::Function) {
-    // Safety: Assume function is a valid, non-null pointer to a Lua function
-    if f.is_null() {
-        return;
-    }
+pub extern "C" fn luago_free_function(f: *mut mluau::Function) {
+    wrap_failable(|| {
+        // Safety: Assume function is a valid, non-null pointer to a Lua function
+        if f.is_null() {
+            return;
+        }
 
-    // Re-box the Lua function pointer to manage its memory automatically.
-    unsafe { drop(Box::from_raw(f)) };
+        // Re-box the Lua function pointer to manage its memory automatically.
+        unsafe { drop(Box::from_raw(f)) };
+    })
 }

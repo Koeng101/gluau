@@ -1,6 +1,10 @@
-use std::ffi::{c_char, CString};
+use std::{ffi::{c_char, CString}, panic::AssertUnwindSafe};
 
 use crate::{multivalue::GoMultiValue, value::GoLuaValue};
+
+pub trait Errorable {
+    fn error_variant(s: String) -> Self;
+}
 
 #[repr(C)]
 pub struct GoNoneResult {
@@ -21,8 +25,14 @@ impl GoNoneResult {
     }
 }
 
+impl Errorable for GoNoneResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
+    }
+}
+
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_none_result_free(ptr: *mut GoNoneResult) {
+pub extern "C" fn luago_none_result_free(ptr: *mut GoNoneResult) {
     if ptr.is_null() {
         return;
     }
@@ -52,6 +62,12 @@ impl GoBoolResult {
     }
 }
 
+impl Errorable for GoBoolResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
+    }
+}
+
 #[repr(C)]
 pub struct GoI64Result {
     value: i64,
@@ -71,6 +87,12 @@ impl GoI64Result {
             value: 0,
             error: to_error(error),
         }
+    }
+}
+
+impl Errorable for GoI64Result {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
     }
 }
 
@@ -96,6 +118,12 @@ impl GoUsizePtrResult {
     }
 }
 
+impl Errorable for GoUsizePtrResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
+    }
+}
+
 #[repr(C)]
 pub struct GoStringResult {
     value: *mut mluau::String,
@@ -115,6 +143,12 @@ impl GoStringResult {
             value: std::ptr::null_mut(),
             error: to_error(error),
         }
+    }
+}
+
+impl Errorable for GoStringResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
     }
 }
 
@@ -140,13 +174,10 @@ impl GoTableResult {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_tableresult_free(ptr: *mut GoTableResult) {
-    if ptr.is_null() {
-        return;
+impl Errorable for GoTableResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
     }
-
-    unsafe { drop(Box::from_raw(ptr)); }    
 }
 
 #[repr(C)]
@@ -168,6 +199,12 @@ impl GoFunctionResult {
             value: std::ptr::null_mut(),
             error: to_error(error),
         }
+    }
+}
+
+impl Errorable for GoFunctionResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
     }
 }
 
@@ -193,6 +230,12 @@ impl GoAnyUserDataResult {
     }
 }
 
+impl Errorable for GoAnyUserDataResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
+    }
+}
+
 #[repr(C)]
 pub struct GoMultiValueResult {
     value: *mut GoMultiValue,
@@ -212,6 +255,12 @@ impl GoMultiValueResult {
             value: std::ptr::null_mut(),
             error: to_error(error),
         }
+    }
+}
+
+impl Errorable for GoMultiValueResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
     }
 }
 
@@ -237,6 +286,12 @@ impl GoThreadResult {
     }
 }
 
+impl Errorable for GoThreadResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
+    }
+}
+
 #[repr(C)]
 pub struct GoValueResult {
     value: GoLuaValue,
@@ -259,6 +314,12 @@ impl GoValueResult {
     }
 }
 
+impl Errorable for GoValueResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
+    }
+}
+
 /// Given a error string, return a heap allocated error
 /// 
 /// Useful for API's which have no return
@@ -270,10 +331,63 @@ pub fn to_error(error: String) -> *mut c_char {
 
 /// Frees the memory for an error string created by Rust.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_result_error_free(error_ptr: *mut c_char) {
+pub extern "C" fn luago_result_error_free(error_ptr: *mut c_char) {
     if !error_ptr.is_null() {
         // Reconstruct the CString from the raw pointer and let it drop,
         // which deallocates the memory.
         unsafe { drop(CString::from_raw(error_ptr)); }
+    }
+}
+
+/// Helper to wrap a Errorable in a catch_unwind
+pub fn wrap_failable<T: Errorable>(f: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(AssertUnwindSafe(|| f())) {
+        Ok(t) => t,
+        Err(e) => {
+            if let Some(s) = e.downcast_ref::<&str>() {
+                T::error_variant(s.to_string())
+            } else if let Some(s) = e.downcast_ref::<String>() {
+                T::error_variant(s.to_string())
+            } else {
+                T::error_variant("unknown panic reason".to_string())
+            }
+        }
+    }
+}
+
+impl Errorable for () {
+    fn error_variant(_s: String) -> Self {
+        ()
+    }
+}
+
+impl Errorable for u8 {
+    fn error_variant(_s: String) -> Self {
+        0
+    }
+}
+
+impl Errorable for usize {
+    fn error_variant(_s: String) -> Self {
+        0
+    }
+}
+
+impl Errorable for bool {
+    fn error_variant(_s: String) -> Self {
+        false
+    }
+}
+
+
+impl<T> Errorable for *mut T {
+    fn error_variant(_s: String) -> Self {
+        std::ptr::null_mut()
+    }
+}
+
+impl Errorable for GoLuaValue {
+    fn error_variant(_s: String) -> Self {
+        GoLuaValue::from_owned(mluau::Value::Nil)
     }
 }

@@ -17,7 +17,7 @@ struct CompilerOpts {
     uint8_t coverage_level;
 };
 
-struct Lua* newluavm();
+struct Lua* newluavm(uint32_t stdlib);
 void luavm_setcompileropts(struct Lua* ptr, struct CompilerOpts opts);
 struct GoNoneResult luavm_setmemorylimit(struct Lua* ptr, size_t limit);
 size_t luago_used_memory(struct Lua* ptr);

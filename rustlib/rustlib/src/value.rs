@@ -1,6 +1,6 @@
 use std::{ffi::{c_void, CString}, sync::Arc};
 
-use crate::string::LuaStringBytes;
+use crate::{result::wrap_failable, string::LuaStringBytes};
 
 #[repr(C)]
 pub enum LuaValueType {
@@ -350,76 +350,86 @@ impl GoLuaValue {
 
 // Clones a GoLuaValue
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_value_clone(value: GoLuaValue) -> GoLuaValue {
-    let cloned_value = value.clone();
-    cloned_value
+pub extern "C" fn luago_value_clone(value: GoLuaValue) -> GoLuaValue {
+    wrap_failable(|| {
+        let cloned_value = value.clone();
+        cloned_value
+    })
 }
 
 // Destroys a GoLuaValue
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_value_destroy(value: GoLuaValue) {
-    value.drop_owned();
+pub extern "C" fn luago_value_destroy(value: GoLuaValue) {
+    wrap_failable(|| {
+        value.drop_owned();
+    })
 }
 
 // Creates a new error variant given char array and length
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_error_new(error: *const i8, len: usize) -> *mut ErrorVariant {
-    // Safety: Assume error is a valid, non-null pointer to a C string of length len.
-    if error.is_null() || len == 0 {
-        // Assume the user wanted to create an empty error
-        let c_str = CString::new("").unwrap();
-        let arc_str = Arc::new(c_str);
+pub extern "C" fn luago_error_new(error: *const i8, len: usize) -> *mut ErrorVariant {
+    wrap_failable(|| {
+        // Safety: Assume error is a valid, non-null pointer to a C string of length len.
+        if error.is_null() || len == 0 {
+            // Assume the user wanted to create an empty error
+            let c_str = CString::new("").unwrap();
+            let arc_str = Arc::new(c_str);
+            let ptr = Box::into_raw(Box::new(ErrorVariant {
+                error: arc_str,
+            }));
+            return ptr;
+        }
+        // Convert the C string to a Rust CString
+        let c_str = unsafe { std::slice::from_raw_parts(error as *const u8, len) };
+        let c_string = CString::new(c_str).unwrap_or_else(|_| {
+            // If the CString creation fails, return a null pointer
+            CString::new("Invalid error string").unwrap()
+        });
+        let arc_str = Arc::new(c_string);
+
         let ptr = Box::into_raw(Box::new(ErrorVariant {
             error: arc_str,
         }));
-        return ptr;
-    }
-    // Convert the C string to a Rust CString
-    let c_str = unsafe { std::slice::from_raw_parts(error as *const u8, len) };
-    let c_string = CString::new(c_str).unwrap_or_else(|_| {
-        // If the CString creation fails, return a null pointer
-        CString::new("Invalid error string").unwrap()
-    });
-    let arc_str = Arc::new(c_string);
 
-    let ptr = Box::into_raw(Box::new(ErrorVariant {
-        error: arc_str,
-    }));
-
-    ptr
+        ptr
+    })
 }
 
 // Returns the inner error string from the ErrorVariant
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_error_get_string(error: *mut ErrorVariant) -> super::string::LuaStringBytes {
-    // Safety: Assume error is a valid, non-null pointer to an ErrorVariant
-    if error.is_null() {
-        return LuaStringBytes {
-            data: std::ptr::null(),
-            size: 0,
-        };
-    }
+pub extern "C" fn luago_error_get_string(error: *mut ErrorVariant) -> super::string::LuaStringBytes {
+    wrap_failable(|| {
+        // Safety: Assume error is a valid, non-null pointer to an ErrorVariant
+        if error.is_null() {
+            return LuaStringBytes {
+                data: std::ptr::null(),
+                size: 0,
+            };
+        }
 
-    // Reconstruct the ErrorVariant and get the error string
-    let error_variant = unsafe { &*error };
-    let error_string = error_variant.error.to_str().unwrap_or("Invalid error string");
+        // Reconstruct the ErrorVariant and get the error string
+        let error_variant = unsafe { &*error };
+        let error_string = error_variant.error.to_str().unwrap_or("Invalid error string");
 
-    LuaStringBytes {
-        data: error_string.as_ptr(),
-        size: error_string.len(),
-    }
+        LuaStringBytes {
+            data: error_string.as_ptr(),
+            size: error_string.len(),
+        }
+    })
 }
 
 // Needed to free a error string
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_error_free(error: *mut ErrorVariant) {
-    // Safety: Assume error is a valid, non-null pointer to a C string
-    if error.is_null() {
-        return;
-    }
+pub extern "C" fn luago_error_free(error: *mut ErrorVariant) {
+    wrap_failable(|| {
+        // Safety: Assume error is a valid, non-null pointer to a C string
+        if error.is_null() {
+            return;
+        }
 
-    // Reconstruct the ErrorVariant and drop it
-    unsafe {
-        drop(Box::from_raw(error));
-    }
+        // Reconstruct the ErrorVariant and drop it
+        unsafe {
+            drop(Box::from_raw(error));
+        }
+    })
 }

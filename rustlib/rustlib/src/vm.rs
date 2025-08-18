@@ -2,84 +2,153 @@ use std::ffi::{c_char, c_void};
 
 use mluau::Lua;
 
-use crate::{compiler::CompilerOpts, multivalue::GoMultiValue, result::{GoNoneResult, GoValueResult}, value::{ErrorVariant, GoLuaValue}, IGoCallback, IGoCallbackWrapper};
+use crate::{compiler::CompilerOpts, multivalue::GoMultiValue, result::{wrap_failable, GoNoneResult, GoValueResult}, value::{ErrorVariant, GoLuaValue}, IGoCallback, IGoCallbackWrapper};
 
-// Base functions
-
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn newluavm() -> *mut mluau::Lua {
-    let lua = Lua::new_with(
-        mluau::StdLib::ALL_SAFE, // TODO: Allow configuring this
-        mluau::LuaOptions::new()
-        .catch_rust_panics(false)
-        .disable_error_userdata(true)
-    ).unwrap(); // Will never error, as we are using safe libraries only.
-
-    lua.set_on_close(|| {
-        println!("Lua VM is being closed");
-    });
-
-    let wrapper = Box::new(lua);
-    Box::into_raw(wrapper)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luavm_setcompileropts(ptr: *mut mluau::Lua, opts: CompilerOpts) {
-    if ptr.is_null() {
-        return; // no-op if pointer is null
-    }
-    let lua = unsafe { &*ptr };
-    lua.set_compiler(opts.to_compiler());
-}
-
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luavm_setmemorylimit(ptr: *mut mluau::Lua, limit: usize) -> GoNoneResult {
-    // Safety: Assume the Lua VM is valid and we can set its memory limit.
-    if ptr.is_null() {
-        return GoNoneResult::err("Lua pointer is null".to_string());
-    }
-    let lua = unsafe { &*ptr };
-    match lua.set_memory_limit(limit) {
-        Ok(_) => GoNoneResult::ok(),
-        Err(err) => GoNoneResult::err(format!("{err}")),
+// Represents the different standard libraries that can be loaded into the Luau VM.
+bitflags::bitflags! {
+    pub struct StdLib: u32 {
+        const COROUTINE = 1 << 0;
+        const TABLE = 1 << 1;
+        const OS = 1 << 2;
+        const STRING = 1 << 3;
+        const UTF8 = 1 << 4;
+        const BIT = 1 << 5;
+        const MATH = 1 << 6;
+        const BUFFER = 1 << 7;
+        const VECTOR = 1 << 8;
+        const DEBUG = 1 << 9;
+        const ALL = 1 << 31;
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luavm_sandbox(ptr: *mut mluau::Lua, enabled: bool) -> GoNoneResult {
-    // Safety: Assume the Lua VM is valid and we can set its sandbox mode.
-    if ptr.is_null() {
-        return GoNoneResult::err("Lua pointer is null".to_string());
-    }
-    let lua = unsafe { &*ptr };
-    match lua.sandbox(enabled) {
-        Ok(_) => GoNoneResult::ok(),
-        Err(err) => GoNoneResult::err(format!("{err}")),
+impl StdLib {
+    pub fn to_mluau(self) -> mluau::StdLib {
+        if self.contains(StdLib::ALL) {
+            return mluau::StdLib::ALL_SAFE; // Return all safe libraries
+        }
+
+        let mut libs = mluau::StdLib::NONE;
+
+        if self.contains(StdLib::COROUTINE) {
+            libs |= mluau::StdLib::COROUTINE;
+        }
+        if self.contains(StdLib::TABLE) {
+            libs |= mluau::StdLib::TABLE;
+        }
+        if self.contains(StdLib::OS) {
+            libs |= mluau::StdLib::OS;
+        }
+        if self.contains(StdLib::STRING) {
+            libs |= mluau::StdLib::STRING;
+        }
+        if self.contains(StdLib::UTF8) {
+            libs |= mluau::StdLib::UTF8;
+        }
+        if self.contains(StdLib::BIT) {
+            libs |= mluau::StdLib::BIT;
+        }
+        if self.contains(StdLib::MATH) {
+            libs |= mluau::StdLib::MATH;
+        }
+        if self.contains(StdLib::BUFFER) {
+            libs |= mluau::StdLib::BUFFER;
+        }
+        if self.contains(StdLib::VECTOR) {
+            libs |= mluau::StdLib::VECTOR;
+        }
+        if self.contains(StdLib::DEBUG) {
+            libs |= mluau::StdLib::DEBUG;
+        }
+        libs
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_globals(ptr: *mut mluau::Lua) -> *mut mluau::Table {
-    // Safety: Assume the Lua VM is valid and we can access its globals.
-    if ptr.is_null() {
-        return std::ptr::null_mut();
-    }
-    let lua = unsafe { &*ptr };
-    Box::into_raw(Box::new(lua.globals()))
+pub extern "C" fn newluavm(stdlib: u32) -> *mut mluau::Lua {
+    wrap_failable(|| {
+        let stdlib = StdLib::from_bits_truncate(stdlib);
+        let lua = Lua::new_with(
+            stdlib.to_mluau(), // TODO: Allow configuring this
+            mluau::LuaOptions::new()
+            .catch_rust_panics(false)
+            .disable_error_userdata(true)
+        ).unwrap(); // Will never error, as we are using safe libraries only.
+
+        lua.set_on_close(|| {
+            println!("Lua VM is being closed");
+        });
+
+        let wrapper = Box::new(lua);
+        Box::into_raw(wrapper)
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_setglobals(ptr: *mut mluau::Lua, tab: *mut mluau::Table) -> GoNoneResult {
-    // Safety: Assume the Lua VM is valid and we can access its globals.
-    if ptr.is_null() {
-        return GoNoneResult::err("Lua pointer is null".to_string());
-    }
-    let lua = unsafe { &*ptr };
-    let tab = unsafe { &*tab };
-    match lua.set_globals(tab.clone()) {
-        Ok(_) => GoNoneResult::ok(),
-        Err(err) => GoNoneResult::err(format!("{err}")),
-    }
+pub extern "C" fn luavm_setcompileropts(ptr: *mut mluau::Lua, opts: CompilerOpts) {
+    wrap_failable(|| {
+        if ptr.is_null() {
+            return; // no-op if pointer is null
+        }
+        let lua = unsafe { &*ptr };
+        lua.set_compiler(opts.to_compiler());
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luavm_setmemorylimit(ptr: *mut mluau::Lua, limit: usize) -> GoNoneResult {
+    wrap_failable(|| {
+        if ptr.is_null() {
+            return GoNoneResult::err("Lua pointer is null".to_string());
+        }
+        let lua = unsafe { &*ptr };
+        match lua.set_memory_limit(limit) {
+            Ok(_) => GoNoneResult::ok(),
+            Err(err) => GoNoneResult::err(format!("{err}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luavm_sandbox(ptr: *mut mluau::Lua, enabled: bool) -> GoNoneResult {
+    wrap_failable(|| {
+        // Safety: Assume the Lua VM is valid and we can set its sandbox mode.
+        if ptr.is_null() {
+            return GoNoneResult::err("Lua pointer is null".to_string());
+        }
+        let lua = unsafe { &*ptr };
+        match lua.sandbox(enabled) {
+            Ok(_) => GoNoneResult::ok(),
+            Err(err) => GoNoneResult::err(format!("{err}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_globals(ptr: *mut mluau::Lua) -> *mut mluau::Table {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a Lua VM
+        if ptr.is_null() {
+            return std::ptr::null_mut();
+        }
+        let lua = unsafe { &*ptr };
+        Box::into_raw(Box::new(lua.globals()))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_setglobals(ptr: *mut mluau::Lua, tab: *mut mluau::Table) -> GoNoneResult {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a Lua VM
+        if ptr.is_null() {
+            return GoNoneResult::err("Lua pointer is null".to_string());
+        }
+        let lua = unsafe { &*ptr };
+        let tab = unsafe { &*tab };
+        match lua.set_globals(tab.clone()) {
+            Ok(_) => GoNoneResult::ok(),
+            Err(err) => GoNoneResult::err(format!("{err}")),
+        }
+    })
 }
 
 #[repr(C)]
@@ -97,182 +166,202 @@ pub struct InterruptData {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_set_interrupt(ptr: *mut mluau::Lua, cb: IGoCallback)  {
-    // Safety: Assume ptr is a valid, non-null pointer to a mluau::Lua
-    if ptr.is_null() {
-        return;
-    }
+pub extern "C" fn luago_set_interrupt(ptr: *mut mluau::Lua, cb: IGoCallback)  {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a mluau::Lua
+        if ptr.is_null() {
+            return;
+        }
 
-    let cb_wrapper = IGoCallbackWrapper::new(cb);
+        let cb_wrapper = IGoCallbackWrapper::new(cb);
 
-    let lua = unsafe { &*ptr };
-    lua.set_interrupt(move |lua| {
-        let wrapper = Box::new(lua.clone());
-        let lua_ptr = Box::into_raw(wrapper);
-        
-        let data = InterruptData {
-            lua: lua_ptr,
-            vm_state: 0, // Default state (Continue)
-            error: std::ptr::null_mut(), // No error by default
+        let lua = unsafe { &*ptr };
+        lua.set_interrupt(move |lua| {
+            let wrapper = Box::new(lua.clone());
+            let lua_ptr = Box::into_raw(wrapper);
+            
+            let data = InterruptData {
+                lua: lua_ptr,
+                vm_state: 0, // Default state (Continue)
+                error: std::ptr::null_mut(), // No error by default
+            };
+
+            let ptr = Box::into_raw(Box::new(data));
+            cb_wrapper.callback(ptr as *mut c_void);
+            let data = unsafe { Box::from_raw(ptr) };
+
+            if !data.error.is_null() {
+                let error = unsafe { Box::from_raw(data.error) };
+                return Err(mluau::Error::external(error.error.to_string_lossy()));
+            }
+            
+            match data.vm_state {
+                0 => Ok(mluau::VmState::Continue), // Continue
+                1 => Ok(mluau::VmState::Yield),    // Yield
+                _ => Err(mluau::Error::external("Invalid VM state".to_string())),
+            }
+        });
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_remove_interrupt(ptr: *mut mluau::Lua)  {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a Lua
+        if ptr.is_null() {
+            return;
+        }
+
+        let lua = unsafe { &*ptr };
+        lua.remove_interrupt();
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_current_thread(ptr: *mut mluau::Lua) -> *mut mluau::Thread {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a Lua
+        if ptr.is_null() {
+            return std::ptr::null_mut();
+        }
+
+        let lua = unsafe { &*ptr };
+        Box::into_raw(Box::new(lua.current_thread()))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_yield_with(ptr: *mut mluau::Lua, args: *mut GoMultiValue) -> GoNoneResult {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a Lua
+        if ptr.is_null() {
+            return GoNoneResult::err("Lua pointer is null".to_string());
+        }
+
+        let lua = unsafe { &*ptr };
+        // Safety: Go side must ensure values cannot be used after it is set
+        // here as a return value
+        let values = unsafe { Box::from_raw(args) };
+        let values_mv = values.values.into_inner().unwrap();
+
+        match lua.yield_with(values_mv) {
+            Ok(_) => GoNoneResult::ok(),
+            Err(err) => GoNoneResult::err(format!("{err}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_used_memory(ptr: *mut mluau::Lua) -> usize {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a Lua
+        if ptr.is_null() {
+            return 0;
+        }
+
+        let lua = unsafe { &*ptr };
+        lua.used_memory()
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_memory_limit(ptr: *mut mluau::Lua) -> usize {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a Lua
+        if ptr.is_null() {
+            return 0;
+        }
+
+        let lua = unsafe { &*ptr };
+        lua.memory_limit().unwrap_or(0)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_set_type_metatable(ptr: *mut mluau::Lua, typ: u8, tab: *mut mluau::Table) {
+    wrap_failable(|| {
+        // ptr must be non-null however tab may be null.
+        if ptr.is_null() {
+            return;
+        }
+
+        let lua = unsafe { &*ptr };
+        let tab = if tab.is_null() {
+            None
+        } else {
+            let tab = unsafe { &*tab };
+            Some(tab.clone())
         };
-
-        let ptr = Box::into_raw(Box::new(data));
-        cb_wrapper.callback(ptr as *mut c_void);
-        let data = unsafe { Box::from_raw(ptr) };
-
-        if !data.error.is_null() {
-            let error = unsafe { Box::from_raw(data.error) };
-            return Err(mluau::Error::external(error.error.to_string_lossy()));
+        match typ {
+            0 => lua.set_type_metatable::<bool>(tab),
+            1 => lua.set_type_metatable::<mluau::LightUserData>(tab),
+            2 => lua.set_type_metatable::<mluau::Number>(tab),
+            3 => lua.set_type_metatable::<mluau::Vector>(tab),
+            4 => lua.set_type_metatable::<mluau::String>(tab),
+            5 => lua.set_type_metatable::<mluau::Function>(tab),
+            6 => lua.set_type_metatable::<mluau::Thread>(tab),
+            7 => lua.set_type_metatable::<mluau::Buffer>(tab),
+            _ => return
         }
-        
-        match data.vm_state {
-            0 => Ok(mluau::VmState::Continue), // Continue
-            1 => Ok(mluau::VmState::Yield),    // Yield
-            _ => Err(mluau::Error::external("Invalid VM state".to_string())),
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_set_named_registry_value(ptr: *mut mluau::Lua, key: *const c_char, keylen: usize, value: GoLuaValue) -> GoNoneResult {
+    wrap_failable(|| {
+        if ptr.is_null() {
+            return GoNoneResult::err("Lua pointer is null".to_string());
         }
-    });
-}
 
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_remove_interrupt(ptr: *mut mluau::Lua)  {
-    // Safety: Assume ptr is a valid, non-null pointer to a Lua
-    if ptr.is_null() {
-        return;
-    }
-
-    let lua = unsafe { &*ptr };
-    lua.remove_interrupt();
-}
-
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_current_thread(ptr: *mut mluau::Lua) -> *mut mluau::Thread {
-    // Safety: Assume ptr is a valid, non-null pointer to a Lua
-    if ptr.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let lua = unsafe { &*ptr };
-    Box::into_raw(Box::new(lua.current_thread()))
-}
-
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_yield_with(ptr: *mut mluau::Lua, args: *mut GoMultiValue) -> GoNoneResult {
-    // Safety: Assume ptr is a valid, non-null pointer to a Lua
-    if ptr.is_null() {
-        return GoNoneResult::err("Lua pointer is null".to_string());
-    }
-
-    let lua = unsafe { &*ptr };
-    // Safety: Go side must ensure values cannot be used after it is set
-    // here as a return value
-    let values = unsafe { Box::from_raw(args) };
-    let values_mv = values.values.into_inner().unwrap();
-
-    match lua.yield_with(values_mv) {
-        Ok(_) => GoNoneResult::ok(),
-        Err(err) => GoNoneResult::err(format!("{err}")),
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_used_memory(ptr: *mut mluau::Lua) -> usize {
-    // Safety: Assume ptr is a valid, non-null pointer to a Lua
-    if ptr.is_null() {
-        return 0;
-    }
-
-    let lua = unsafe { &*ptr };
-    lua.used_memory()
-}
-
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_memory_limit(ptr: *mut mluau::Lua) -> usize {
-    // Safety: Assume ptr is a valid, non-null pointer to a Lua
-    if ptr.is_null() {
-        return 0;
-    }
-
-    let lua = unsafe { &*ptr };
-    lua.memory_limit().unwrap_or(0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_set_type_metatable(ptr: *mut mluau::Lua, typ: u8, tab: *mut mluau::Table) {
-    // ptr must be non-null however tab may be null.
-    if ptr.is_null() {
-        return;
-    }
-
-    let lua = unsafe { &*ptr };
-    let tab = if tab.is_null() {
-        None
-    } else {
-        let tab = unsafe { &*tab };
-        Some(tab.clone())
-    };
-    match typ {
-        0 => lua.set_type_metatable::<bool>(tab),
-        1 => lua.set_type_metatable::<mluau::LightUserData>(tab),
-        2 => lua.set_type_metatable::<mluau::Number>(tab),
-        3 => lua.set_type_metatable::<mluau::Vector>(tab),
-        4 => lua.set_type_metatable::<mluau::String>(tab),
-        5 => lua.set_type_metatable::<mluau::Function>(tab),
-        6 => lua.set_type_metatable::<mluau::Thread>(tab),
-        7 => lua.set_type_metatable::<mluau::Buffer>(tab),
-        _ => return
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_set_named_registry_value(ptr: *mut mluau::Lua, key: *const c_char, keylen: usize, value: GoLuaValue) -> GoNoneResult {
-    if ptr.is_null() {
-        return GoNoneResult::err("Lua pointer is null".to_string());
-    }
-
-    let lua = unsafe { &*ptr };
-    let value = value.to_value_from_owned();
-    let key = if key.is_null() {
-        unsafe { std::str::from_utf8_unchecked(&[]) }
-    } else {
-        let key = unsafe { std::slice::from_raw_parts(key as *const u8, keylen) };
-        match std::str::from_utf8(key) {
-            Ok(s) => s,
-            Err(_) => return GoNoneResult::err("Invalid UTF-8 key".to_string()),
+        let lua = unsafe { &*ptr };
+        let value = value.to_value_from_owned();
+        let key = if key.is_null() {
+            unsafe { std::str::from_utf8_unchecked(&[]) }
+        } else {
+            let key = unsafe { std::slice::from_raw_parts(key as *const u8, keylen) };
+            match std::str::from_utf8(key) {
+                Ok(s) => s,
+                Err(_) => return GoNoneResult::err("Invalid UTF-8 key".to_string()),
+            }
+        };
+        match lua.set_named_registry_value(key, value) {
+            Ok(_) => GoNoneResult::ok(),
+            Err(err) => GoNoneResult::err(format!("{err}")),
         }
-    };
-    match lua.set_named_registry_value(key, value) {
-        Ok(_) => GoNoneResult::ok(),
-        Err(err) => GoNoneResult::err(format!("{err}")),
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_named_registry_value(ptr: *mut mluau::Lua, key: *const c_char, keylen: usize) -> GoValueResult {
-    if ptr.is_null() {
-        return GoValueResult::err("Lua pointer is null".to_string());
-    }
-
-    let lua = unsafe { &*ptr };
-    let key = if key.is_null() {
-        unsafe { std::str::from_utf8_unchecked(&[]) }
-    } else {
-        let key = unsafe { std::slice::from_raw_parts(key as *const u8, keylen) };
-        match std::str::from_utf8(key) {
-            Ok(s) => s,
-            Err(_) => return GoValueResult::err("Invalid UTF-8 key".to_string()),
+pub extern "C" fn luago_named_registry_value(ptr: *mut mluau::Lua, key: *const c_char, keylen: usize) -> GoValueResult {
+    wrap_failable(|| {
+        if ptr.is_null() {
+            return GoValueResult::err("Lua pointer is null".to_string());
         }
-    };
-    match lua.named_registry_value::<mluau::Value>(key) {
-        Ok(v) => GoValueResult::ok(GoLuaValue::from_owned(v)),
-        Err(err) => GoValueResult::err(format!("{err}")),
-    }
+
+        let lua = unsafe { &*ptr };
+        let key = if key.is_null() {
+            unsafe { std::str::from_utf8_unchecked(&[]) }
+        } else {
+            let key = unsafe { std::slice::from_raw_parts(key as *const u8, keylen) };
+            match std::str::from_utf8(key) {
+                Ok(s) => s,
+                Err(_) => return GoValueResult::err("Invalid UTF-8 key".to_string()),
+            }
+        };
+        match lua.named_registry_value::<mluau::Value>(key) {
+            Ok(v) => GoValueResult::ok(GoLuaValue::from_owned(v)),
+            Err(err) => GoValueResult::err(format!("{err}")),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn freeluavm(ptr: *mut mluau::Lua) {
-    // Safety: Assume ptr is a valid, non-null pointer to a mluau::Lua
-    // and that ownership is being transferred back to Rust to be dropped.
-    unsafe {
-        drop(Box::from_raw(ptr));
-    }
+pub extern "C" fn freeluavm(ptr: *mut mluau::Lua) {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a mluau::Lua
+        // and that ownership is being transferred back to Rust to be dropped.
+        unsafe {
+            drop(Box::from_raw(ptr));
+        }
+    })
 }

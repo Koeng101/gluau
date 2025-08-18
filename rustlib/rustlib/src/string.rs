@@ -2,26 +2,28 @@
 
 use std::ffi::c_char;
 
-use crate::result::GoStringResult;
+use crate::result::{wrap_failable, Errorable, GoStringResult};
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_create_string(ptr: *mut mluau::Lua, s: *const c_char, len: usize) -> GoStringResult  {
-    // Safety: Assume ptr is a valid, non-null pointer to a Lua
-    // and that s points to a valid C string of length len.
-    let lua = unsafe { &*ptr };
+pub extern "C" fn luago_create_string(ptr: *mut mluau::Lua, s: *const c_char, len: usize) -> GoStringResult  {
+    wrap_failable(|| {
+        // Safety: Assume ptr is a valid, non-null pointer to a Lua
+        // and that s points to a valid C string of length len.
+        let lua = unsafe { &*ptr };
 
-    let res = if s.is_null() {
-        // Create an empty string if the pointer is null.
-        lua.create_string("")
-    } else {
-        let slice = unsafe { std::slice::from_raw_parts(s as *const u8, len) };
-        lua.create_string(slice)
-    };
+        let res = if s.is_null() {
+            // Create an empty string if the pointer is null.
+            lua.create_string("")
+        } else {
+            let slice = unsafe { std::slice::from_raw_parts(s as *const u8, len) };
+            lua.create_string(slice)
+        };
 
-    match res {
-        Ok(str) => GoStringResult::ok(Box::into_raw(Box::new(str))),
-        Err(err) => GoStringResult::err(format!("{err}"))
-    }
+        match res {
+            Ok(str) => GoStringResult::ok(Box::into_raw(Box::new(str))),
+            Err(err) => GoStringResult::err(format!("{err}"))
+        }
+    })
 }
 
 #[repr(C)]
@@ -32,67 +34,84 @@ pub struct LuaStringBytes {
     pub size: usize,
 }
 
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_string_as_bytes(string: *mut mluau::String) -> LuaStringBytes {
-    // Safety: Assume string is a valid, non-null pointer to a Lua String
-    if string.is_null() {
-        return LuaStringBytes {
+impl Errorable for LuaStringBytes {
+    fn error_variant(_s: String) -> Self {
+        Self {
             data: std::ptr::null(),
             size: 0,
-        };
-    }
-
-    let lua_string = unsafe { &*string };
-    
-    // Return a pointer to the bytes of the Lua String.
-    let bytes = lua_string.as_bytes();
-    LuaStringBytes {
-        data: bytes.as_ptr(),
-        size: bytes.len(),
+        }
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_string_as_bytes_with_nul(string: *mut mluau::String) -> LuaStringBytes {
-    // Safety: Assume string is a valid, non-null pointer to a Lua String
-    if string.is_null() {
-        return LuaStringBytes {
-            data: std::ptr::null(),
-            size: 0,
-        };
-    }
+pub extern "C" fn luago_string_as_bytes(string: *mut mluau::String) -> LuaStringBytes {
+    wrap_failable(|| {
+        // Safety: Assume string is a valid, non-null pointer to a Lua String
+        if string.is_null() {
+            return LuaStringBytes {
+                data: std::ptr::null(),
+                size: 0,
+            };
+        }
 
-    let lua_string = unsafe { &*string };
-    
-    // Return a pointer to the bytes of the Lua String.
-    let bytes = lua_string.as_bytes_with_nul();
-    LuaStringBytes {
-        data: bytes.as_ptr(),
-        size: bytes.len(),
-    }
+        let lua_string = unsafe { &*string };
+        
+        // Return a pointer to the bytes of the Lua String.
+        let bytes = lua_string.as_bytes();
+        LuaStringBytes {
+            data: bytes.as_ptr(),
+            size: bytes.len(),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_string_to_pointer(string: *mut mluau::String) -> usize {
-    // Safety: Assume string is a valid, non-null pointer to a Lua String
-    if string.is_null() {
-        return 0;
-    }
+pub extern "C" fn luago_string_as_bytes_with_nul(string: *mut mluau::String) -> LuaStringBytes {
+    wrap_failable(|| {
+        // Safety: Assume string is a valid, non-null pointer to a Lua String
+        if string.is_null() {
+            return LuaStringBytes {
+                data: std::ptr::null(),
+                size: 0,
+            };
+        }
 
-    let lua_string = unsafe { &*string };
-
-    let ptr = lua_string.to_pointer();
-
-    ptr as usize
+        let lua_string = unsafe { &*string };
+        
+        // Return a pointer to the bytes of the Lua String.
+        let bytes = lua_string.as_bytes_with_nul();
+        LuaStringBytes {
+            data: bytes.as_ptr(),
+            size: bytes.len(),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn luago_free_string(string: *mut mluau::String) {
-    // Safety: Assume string is a valid, non-null pointer to a Lua String
-    if string.is_null() {
-        return;
-    }
+pub extern "C" fn luago_string_to_pointer(string: *mut mluau::String) -> usize {
+    wrap_failable(|| {
+        // Safety: Assume string is a valid, non-null pointer to a Lua String
+        if string.is_null() {
+            return 0;
+        }
 
-    // Re-box the Lua String pointer to manage its memory automatically.
-    unsafe { drop(Box::from_raw(string)) };
+        let lua_string = unsafe { &*string };
+
+        let ptr = lua_string.to_pointer();
+
+        ptr as usize
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_free_string(string: *mut mluau::String) {
+    wrap_failable(|| {
+        // Safety: Assume string is a valid, non-null pointer to a Lua String
+        if string.is_null() {
+            return;
+        }
+
+        // Re-box the Lua String pointer to manage its memory automatically.
+        unsafe { drop(Box::from_raw(string)) };
+    })
 }
