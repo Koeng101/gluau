@@ -94,7 +94,7 @@ func (l *LuaThread) Status() ThreadStatus {
 //
 // If the thread is no longer resumable (meaning it has finished execution or encountered an error), this will return a coroutine unresumable error, otherwise will return as follows:
 // If the thread is yielded via coroutine.yield or CallbackLua.YieldWith, returns the values passed to yield. If the thread returns values from its main function, returns those.
-func (l *LuaThread) Resume(args []Value) ([]Value, error) {
+func (l *LuaThread) Resume(args ...Value) ([]Value, error) {
 	if l.lua.object.IsClosed() {
 		return nil, fmt.Errorf("cannot resume thread on closed Lua VM")
 	}

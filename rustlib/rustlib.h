@@ -26,6 +26,7 @@ struct GoNoneResult luavm_sandbox(struct Lua* ptr, bool enabled);
 struct LuaTable* luago_globals(struct Lua* ptr);
 struct GoNoneResult luago_setglobals(struct Lua* ptr, struct LuaTable* globals);
 struct LuaThread* luago_current_thread(struct Lua* ptr);
+void luago_set_type_metatable(struct Lua* ptr, uint8_t typ, struct LuaTable* mt);
 void freeluavm(struct Lua* ptr);
 
 typedef void (*Callback)(void* val, uintptr_t handle);

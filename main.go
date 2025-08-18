@@ -9,6 +9,7 @@ import (
 
 	// Import to ensure callback package is initialized
 	vmlib "github.com/gluau/gluau/vm"
+	"github.com/gluau/gluau/vmutils"
 )
 
 // #include <stdlib.h>
@@ -249,14 +250,14 @@ func main() {
 		panic(err)
 	}
 
-	res, err := myFunc.Call([]vmlib.Value{vmlib.GoString("foo")})
+	res, err := myFunc.Call(vmlib.GoString("foo"))
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("Function call response", res[0].(*vmlib.ValueString).Value().String())
 	defer res[0].Close()
 
-	res, err = myFunc.Call([]vmlib.Value{vmlib.GoString("foo")})
+	res, err = myFunc.Call(vmlib.GoString("foo"))
 	if err != nil {
 		panic(err)
 	}
@@ -270,11 +271,11 @@ func main() {
 		panic(err)
 	}
 
-	_, err = myFunc.Call([]vmlib.Value{vmlib.GoString("foo")})
+	_, err = myFunc.Call(vmlib.GoString("foo"))
 	if err != nil {
 		fmt.Println("function error", err)
 	}
-	_, err = myFunc.Call([]vmlib.Value{vmlib.NewValueVector(1, 2, 3)})
+	_, err = myFunc.Call(vmlib.NewValueVector(1, 2, 3))
 	if err != nil {
 		fmt.Println("function error", err)
 	}
@@ -363,7 +364,7 @@ func main() {
 		panic("Original Lua function environment does not match the one we set")
 	}
 
-	ret, err := luaFunc.Call([]vmlib.Value{})
+	ret, err := luaFunc.Call()
 	if err != nil {
 		panic(err)
 	}
@@ -418,7 +419,7 @@ func main() {
 	}
 
 	// Call the Lua function to trigger the interrupt
-	_, err = luaFunc.Call([]vmlib.Value{})
+	_, err = luaFunc.Call()
 	if err != nil {
 		if !strings.Contains(err.Error(), "test interrupt error") {
 			panic(fmt.Sprintf("Expected interrupt error, got: %v", err))
@@ -443,7 +444,7 @@ func main() {
 	//
 	// Currently, we havent made it a LuaThread yet, this will yield a attempt to yield
 	// across metamethod/C-call boundary
-	_, err = luaFunc.Call([]vmlib.Value{})
+	_, err = luaFunc.Call()
 	if err != nil {
 		fmt.Println("Lua function call error (expected due to interrupt):", err)
 	} else {
@@ -468,7 +469,7 @@ func main() {
 	//
 	// As this is now a thread that is not main thread, this wont error
 	// with a yield across metamethod/C-call boundary error anymore
-	_, err = thread.Resume([]vmlib.Value{})
+	_, err = thread.Resume()
 	if err != nil {
 		panic(fmt.Sprintf("Failed to resume Lua thread: %v", err))
 	}
@@ -489,7 +490,7 @@ func main() {
 	fmt.Println("Lua thread 2 created successfully:", thread)
 
 	// Resume the thread with no arguments
-	_, err = thread.Resume([]vmlib.Value{})
+	_, err = thread.Resume()
 	if err != nil {
 		if !strings.Contains(err.Error(), "test interrupt error") {
 			panic(fmt.Sprintf("Expected interrupt error, got: %v", err))
@@ -540,7 +541,7 @@ func main() {
 		panic(fmt.Sprintf("Failed to create Lua yield function: %v", err))
 	}
 	defer yieldFunc.Close() // Ensure we close the Lua function when done
-	res, err = thread2.Resume([]vmlib.Value{yieldFunc.ToValue()})
+	res, err = thread2.Resume(yieldFunc.ToValue())
 	if err != nil {
 		panic(fmt.Sprintf("Failed to resume Lua thread with yield function: %v", err))
 	}
@@ -557,7 +558,7 @@ func main() {
 	}
 
 	// Resume the thread again to finish it
-	res, err = thread2.Resume([]vmlib.Value{})
+	res, err = thread2.Resume()
 	if err != nil {
 		panic(fmt.Sprintf("Failed to resume Lua thread after yield: %v", err))
 	}
@@ -568,4 +569,43 @@ func main() {
 	if res[0].(*vmlib.ValueInteger).Value() != 1 {
 		panic(fmt.Sprintf("Expected 1, got %d", res[0].(*vmlib.ValueInteger).Value()))
 	}
+
+	luaFunc.Close()  // Close the previous function to avoid memory leaks
+	luaFunc2.Close() // Close the previous function to avoid memory leaks
+
+	// Test set type metatable
+	vm2, err := vmlib.CreateLuaVm()
+	if err != nil {
+		panic(vm2)
+	}
+	myTypeMt, err := vm2.CreateTable()
+	if err != nil {
+		panic(vm2)
+	}
+	vmutils.MustOk(
+		myTypeMt.Set(
+			vmlib.GoString("__tostring"),
+			vmutils.Must(
+				vm2.CreateFunction(func(funcVm *vmlib.CallbackLua, args []vmlib.Value) ([]vmlib.Value, error) {
+					fmt.Println("test")
+					return []vmlib.Value{vmlib.GoString("hello")}, nil
+				}),
+			).ToValue(),
+		),
+	)
+	vmutils.MustOk(vm2.SetTypeMetatable(vmlib.TypeMetatableTypeBool, myTypeMt))
+
+	luaFunc, err = vm2.LoadChunk(vmlib.ChunkOpts{
+		Name: "test_typemt",
+		Code: "local b = true; return tostring(b)",
+	})
+	if err != nil {
+		panic(err)
+	}
+	res = vmutils.Must(luaFunc.Call())
+	if res[0].(*vmlib.ValueString).Value().String() != "hello" {
+		panic("type metatable set failed")
+	}
+
+	vm2.Close()
 }

@@ -197,6 +197,33 @@ pub extern "C-unwind" fn luago_memory_limit(ptr: *mut mluau::Lua) -> usize {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_set_type_metatable(ptr: *mut mluau::Lua, typ: u8, tab: *mut mluau::Table) {
+    // ptr must be non-null however tab may be null.
+    if ptr.is_null() {
+        return;
+    }
+
+    let lua = unsafe { &*ptr };
+    let tab = if tab.is_null() {
+        None
+    } else {
+        let tab = unsafe { &*tab };
+        Some(tab.clone())
+    };
+    match typ {
+        0 => lua.set_type_metatable::<bool>(tab),
+        1 => lua.set_type_metatable::<mluau::LightUserData>(tab),
+        2 => lua.set_type_metatable::<mluau::Number>(tab),
+        3 => lua.set_type_metatable::<mluau::Vector>(tab),
+        4 => lua.set_type_metatable::<mluau::String>(tab),
+        5 => lua.set_type_metatable::<mluau::Function>(tab),
+        6 => lua.set_type_metatable::<mluau::Thread>(tab),
+        7 => lua.set_type_metatable::<mluau::Buffer>(tab),
+        _ => return
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C-unwind" fn freeluavm(ptr: *mut mluau::Lua) {
     // Safety: Assume ptr is a valid, non-null pointer to a mluau::Lua
     // and that ownership is being transferred back to Rust to be dropped.

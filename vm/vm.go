@@ -106,6 +106,51 @@ func (l *Lua) MemoryLimit() int {
 	return int(limit)
 }
 
+type TypeMetatableType uint8
+
+const (
+	TypeMetatableTypeBool TypeMetatableType = iota
+	TypeMetatableTypeLightUserData
+	TypeMetatableTypeNumber
+	TypeMetatableTypeVector
+	TypeMetatableTypeString
+	TypeMetatableTypeFunction
+	TypeMetatableTypeThread
+	TypeMetatableTypeBuffer
+)
+
+// SetTypeMetatable sets the metatable for a Lua builtin type.
+//
+// - The metatable will be shared by all values of the given type.
+// - mt can be set to nil to remove the metatable
+func (l *Lua) SetTypeMetatable(typ TypeMetatableType, mt *LuaTable) error {
+	var mtPtr *C.struct_LuaTable = nil
+	if mt != nil {
+		if mt.lua != l {
+			return fmt.Errorf("cannot create userdata with metatable from different Lua instance")
+		}
+
+		defer mt.object.RUnlock()
+		mt.object.RLock()
+		metaPtr, err := mt.innerPtr()
+		if err != nil {
+			return err // Return error if the metatable is closed
+		}
+		mtPtr = metaPtr
+	}
+
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return err
+	}
+
+	C.luago_set_type_metatable(lua, C.uint8_t(typ), mtPtr)
+	return nil
+}
+
 // Sandbox enables or disables the sandbox mode for the Luau VM.
 //
 // This method, in particular:
@@ -190,7 +235,7 @@ const (
 	VmStateYield            // Yield the VM execution / stop execution
 )
 
-type InterruptFn = func(funcVm *CallbackLua) (VmState, error)
+type InterruptFn func(funcVm *CallbackLua) (VmState, error)
 
 // Sets an interrupt function that will periodically be called by Luau VM.
 //
@@ -397,7 +442,7 @@ func CreateErrorVariant(s []byte) *ErrorVariant {
 	return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
 }
 
-type FunctionFn = func(funcVm *CallbackLua, args []Value) ([]Value, error)
+type FunctionFn func(funcVm *CallbackLua, args []Value) ([]Value, error)
 
 // CreateFunction creates a new Function
 //
@@ -585,7 +630,7 @@ func (l *Lua) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, er
 
 	defer mt.object.RUnlock()
 	mt.object.RLock()
-	mtPtr, err := mt.object.PointerNoLock()
+	mtPtr, err := mt.innerPtr()
 	if err != nil {
 		return nil, err // Return error if the metatable is closed
 	}
@@ -594,7 +639,7 @@ func (l *Lua) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, er
 		fmt.Println("dynamic data is being dropped")
 	})
 	cDynData := dynData.ToC()
-	res := C.luago_create_userdata(lua, cDynData, (*C.struct_LuaTable)(unsafe.Pointer(mtPtr)))
+	res := C.luago_create_userdata(lua, cDynData, mtPtr)
 	if res.error != nil {
 		err := moveErrorToGoError(res.error)
 		return nil, err
