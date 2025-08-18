@@ -83,6 +83,33 @@ func (l *LuaUserData) Pointer() uint64 {
 	return uint64(ptr)
 }
 
+// Equals checks if the LuaUserData equals another LuaUserData by lua value reference
+func (l *LuaUserData) Equals(other *LuaUserData) bool {
+	if l.lua.object.IsClosed() {
+		return false // Return false if the Lua VM is closed
+	}
+
+	if other == nil || l.lua != other.lua {
+		return false // Return false if the Lua instances are different
+	}
+
+	l.object.RLock()
+	defer l.object.RUnlock()
+	other.object.RLock()
+	defer other.object.RUnlock()
+
+	ptr, err := l.innerPtr()
+	if err != nil {
+		return false // Return error if the object is closed
+	}
+	ptr2, err := other.innerPtr()
+	if err != nil {
+		return false // Return error if the other object is closed
+	}
+
+	return bool(C.luago_userdata_equals(ptr, ptr2))
+}
+
 // Metatable returns the metatable of the LuaUserData.
 func (l *LuaUserData) Metatable() (*LuaTable, error) {
 	if l.lua.object.IsClosed() {

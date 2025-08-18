@@ -83,6 +83,18 @@ pub extern "C-unwind" fn luago_userdata_metatable(userdata: *mut mluau::AnyUserD
 }
 
 #[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_userdata_equals(ud: *mut mluau::AnyUserData, ud2: *mut mluau::AnyUserData) -> bool {
+    if ud.is_null() || ud2.is_null() {
+        return ud.is_null() && ud2.is_null(); // If both are null, they are equal
+    }
+
+    let ud1 = unsafe { &*ud };
+    let ud2 = unsafe { &*ud2 };
+
+    ud1 == ud2
+}
+
+#[unsafe(no_mangle)]
 pub extern "C-unwind" fn luago_free_userdata(ud: *mut mluau::AnyUserData) {
     // Safety: Assume userdata is a valid, non-null pointer to a Lua userdata
     if ud.is_null() {

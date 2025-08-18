@@ -182,7 +182,7 @@ struct GoUserDataResult luago_create_userdata(struct Lua* ptr, struct DynamicDat
 struct GoUsizePtrResult luago_get_userdata_handle(struct LuaUserData* ptr);
 uintptr_t luago_userdata_to_pointer(struct LuaUserData* ptr);
 struct GoTableResult luago_userdata_metatable(struct LuaUserData* ptr);
-bool luago_thread_equals(struct LuaThread* a, struct LuaThread* b);
+bool luago_userdata_equals(struct LuaUserData* a, struct LuaUserData* b);
 void luago_free_userdata(struct LuaUserData* ptr);
 
 // Thread API
@@ -192,6 +192,7 @@ uint8_t luago_thread_status(struct LuaThread* ptr);
 struct GoMultiValueResult luago_thread_resume(struct LuaThread* ptr, struct GoMultiValue* args);
 uintptr_t luago_thread_to_pointer(struct LuaThread* ptr);
 struct GoNoneResult luago_yield_with(struct Lua* ptr, struct GoMultiValue* args);
+bool luago_thread_equals(struct LuaThread* a, struct LuaThread* b);
 void luago_free_thread(struct LuaThread* ptr);
 
 
