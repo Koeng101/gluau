@@ -4,3 +4,4 @@ rustlib/rustlib/target
 go-rust
 go-rust-*
 gluau
+*.dll

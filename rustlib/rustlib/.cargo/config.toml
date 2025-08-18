@@ -4,6 +4,9 @@ rustflags = ["-C", "link-arg=-s"]
 [target.aarch64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-s"]
 
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+
 [alias]
 # Create a custom command, e.g., "build-std-release"
 build-std-release = "build --release -Z build-std=std,panic_unwind -Z build-std-features=optimize_for_size"
