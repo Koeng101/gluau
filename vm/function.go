@@ -175,12 +175,14 @@ func (l *LuaFunction) Equals(other *LuaFunction) bool {
 		return false // Return false if the Lua VM is closed
 	}
 
-	if l.lua != other.lua {
+	if other == nil || l.lua != other.lua {
 		return false // Return false if the Lua instances are different
 	}
 
 	l.object.RLock()
 	defer l.object.RUnlock()
+	other.object.RLock()
+	defer other.object.RUnlock()
 
 	ptr, err := l.innerPtr()
 	if err != nil {

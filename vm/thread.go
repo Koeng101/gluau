@@ -141,6 +141,33 @@ func (l *LuaThread) Pointer() uint64 {
 	return uint64(ptr)
 }
 
+// Equals checks if the LuaThread equals another LuaThread by lua value reference
+func (l *LuaThread) Equals(other *LuaThread) bool {
+	if l.lua.object.IsClosed() {
+		return false // Return false if the Lua VM is closed
+	}
+
+	if other == nil || l.lua != other.lua {
+		return false // Return false if the Lua instances are different
+	}
+
+	l.object.RLock()
+	defer l.object.RUnlock()
+	other.object.RLock()
+	defer other.object.RUnlock()
+
+	ptr, err := l.innerPtr()
+	if err != nil {
+		return false // Return error if the object is closed
+	}
+	ptr2, err := other.innerPtr()
+	if err != nil {
+		return false // Return error if the other object is closed
+	}
+
+	return bool(C.luago_thread_equals(ptr, ptr2))
+}
+
 // String returns a string representation of the LuaThread.
 func (l *LuaThread) String() string {
 	status := l.Status()

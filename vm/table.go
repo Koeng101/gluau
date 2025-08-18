@@ -86,6 +86,10 @@ func (l *LuaTable) Equals(other *LuaTable) (bool, error) {
 		return false, fmt.Errorf("cannot compare LuaTable on closed Lua VM")
 	}
 
+	if other == nil {
+		return false, nil
+	}
+
 	if l.lua != other.lua {
 		return false, fmt.Errorf("cannot compare LuaTable from different Lua instances")
 	}

@@ -82,7 +82,7 @@ func (l *LuaString) Pointer() uint64 {
 //
 // Equivalent to l.String() == other.String().
 func (l *LuaString) Equals(other *LuaString) bool {
-	return l.String() == other.String()
+	return (l == nil && other == nil) || (l.String() == other.String())
 }
 
 // String returns the LuaString as a Go string.

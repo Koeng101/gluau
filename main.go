@@ -448,6 +448,12 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create Lua thread: %v", err))
 	}
+	if !thread.Equals(thread) {
+		panic("Expected thread to equal itself")
+	}
+	if thread.Equals(nil) {
+		panic("Expected thread to not equal nil")
+	}
 	defer thread.Close() // Ensure we close the Lua thread when done
 	fmt.Println("Lua thread created successfully:", thread)
 
@@ -487,6 +493,9 @@ func main() {
 	}
 
 	thread.Close()
+	if thread.Equals(thread) {
+		panic("expected closing thread to not equal itself")
+	}
 	luaFunc.Close() // Close the Lua function to avoid memory leaks
 
 	luaFunc2, err := vm.LoadChunk(vmlib.ChunkOpts{

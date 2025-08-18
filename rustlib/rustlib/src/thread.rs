@@ -68,6 +68,18 @@ pub extern "C-unwind" fn luago_thread_to_pointer(t: *mut mluau::Thread) -> usize
 }
 
 #[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_thread_equals(t: *mut mluau::Thread, t2: *mut mluau::Thread) -> bool {
+    if t.is_null() || t2.is_null() {
+        return t.is_null() && t2.is_null(); // If both are null, they are equal
+    }
+
+    let t1 = unsafe { &*t };
+    let t2 = unsafe { &*t2 };
+
+    t1 == t2
+}
+
+#[unsafe(no_mangle)]
 pub extern "C-unwind" fn luago_free_thread(t: *mut mluau::Thread) {
     // Safety: Assume t is a valid, non-null pointer to a Lua thread
     if t.is_null() {
