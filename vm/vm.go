@@ -115,6 +115,10 @@ func (l *Lua) Globals() *LuaTable {
 //
 // To update the environment for existing Lua functions, use LuaFunction.SetEnvironment
 func (l *Lua) SetGlobals(tab *LuaTable) error {
+	if tab.lua != l {
+		return fmt.Errorf("cannot set globals from different Lua instance")
+	}
+
 	l.object.RLock()
 	defer l.object.RUnlock()
 
@@ -268,14 +272,14 @@ func (l *Lua) createString(s []byte) (*LuaString, error) {
 		if res.error != nil {
 			return nil, moveErrorToGoError(res.error)
 		}
-		return &LuaString{object: newObject((*C.void)(unsafe.Pointer(res.value)), stringTab)}, nil
+		return &LuaString{object: newObject((*C.void)(unsafe.Pointer(res.value)), stringTab), lua: l}, nil
 	}
 
 	res := C.luago_create_string(lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
 	if res.error != nil {
 		return nil, moveErrorToGoError(res.error)
 	}
-	return &LuaString{object: newObject((*C.void)(unsafe.Pointer(res.value)), stringTab)}, nil
+	return &LuaString{object: newObject((*C.void)(unsafe.Pointer(res.value)), stringTab), lua: l}, nil
 }
 
 // Create string as pointer (without any finalizer)
@@ -440,6 +444,10 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 // Locking behavior: Takes a read-lock on the LuaFunction object
 // and the Lua VM object
 func (l *Lua) CreateThread(fn *LuaFunction) (*LuaThread, error) {
+	if fn.lua != l {
+		return nil, fmt.Errorf("cannot create thread from different Lua instance")
+	}
+
 	if fn == nil {
 		return nil, fmt.Errorf("function cannot be nil")
 	}
@@ -479,6 +487,10 @@ func (l *Lua) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 
 	var env *C.struct_LuaTable
 	if opts.Env != nil {
+		if opts.Env.lua != l {
+			return nil, fmt.Errorf("cannot set environment table from different Lua instance")
+		}
+
 		defer opts.Env.object.RUnlock()
 		opts.Env.object.RLock()
 		envPtr, err := opts.Env.object.PointerNoLock()
@@ -518,6 +530,9 @@ func (l *Lua) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 func (l *Lua) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, error) {
 	if mt == nil {
 		return nil, fmt.Errorf("metatable cannot be nil")
+	}
+	if mt.lua != l {
+		return nil, fmt.Errorf("cannot create userdata with metatable from different Lua instance")
 	}
 
 	l.object.RLock()
@@ -635,7 +650,7 @@ func (c *CallbackLua) YieldWith(args []Value) error {
 
 	mw, err := c.cbstate.multiValueFromValues(args)
 	if err != nil {
-		return err // Return error if the values cannot be converted
+		return err // Return error if the values cannot be converted (diff lua state, closed object, etc)
 	}
 
 	res := C.luago_yield_with(lua, mw.ptr)

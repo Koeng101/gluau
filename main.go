@@ -499,6 +499,12 @@ func main() {
 		panic(fmt.Sprintf("Failed to load Lua chunk for yielding: %v", err))
 	}
 
+	if luaFunc2.Equals(luaFunc) {
+		panic("Expected luaFunc2 to be a different function than luaFunc")
+	} else if !luaFunc2.Equals(luaFunc2) {
+		panic("Expected luaFunc2 to equal itself")
+	}
+
 	defer luaFunc2.Close() // Ensure we close the Lua function when done
 
 	// A simple yielding test

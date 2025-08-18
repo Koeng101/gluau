@@ -65,6 +65,13 @@ func (o *object) UnsafePointer() (*C.void, error) {
 	return o.ptr, nil
 }
 
+// Returns if the object is closed or not
+func (o *object) IsClosed() bool {
+	o.RLock()
+	defer o.RUnlock()
+	return o.closed
+}
+
 // Close cleans up the Object by calling the destructor and setting the pointer to nil.
 func (o *object) Close() error {
 	// Safety: Close() can only be called if no one is reading/using the object.

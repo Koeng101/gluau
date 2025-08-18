@@ -169,6 +169,7 @@ uintptr_t luago_function_to_pointer(struct LuaFunction* ptr);
 struct GoFunctionResult luago_function_deepclone(struct LuaFunction* ptr);
 struct LuaTable* luago_function_environment(struct LuaFunction* ptr);
 struct GoBoolResult luago_function_set_environment(struct LuaFunction* ptr, struct LuaTable* table);
+bool luago_function_equals(struct LuaFunction* a, struct LuaFunction* b);
 void luago_free_function(struct LuaFunction* f);
 
 // Userdata API

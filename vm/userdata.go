@@ -34,6 +34,10 @@ func (l *LuaUserData) innerPtr() (*C.struct_LuaUserData, error) {
 //
 // Errors if there is no associated data or if the userdata is closed.
 func (l *LuaUserData) AssociatedData() (any, error) {
+	if l.lua.object.IsClosed() {
+		return nil, fmt.Errorf("cannot access userdata on closed Lua VM")
+	}
+
 	l.object.RLock()
 	defer l.object.RUnlock()
 
@@ -64,6 +68,10 @@ func (l *LuaUserData) AssociatedData() (any, error) {
 // This pointer is only useful for hashing/debugging
 // and cannot be converted back to the original Lua userdata object.
 func (l *LuaUserData) Pointer() uint64 {
+	if l.lua.object.IsClosed() {
+		return 0 // Return 0 if the Lua VM is closed
+	}
+
 	l.object.RLock()
 	defer l.object.RUnlock()
 	lptr, err := l.object.PointerNoLock()
@@ -77,6 +85,10 @@ func (l *LuaUserData) Pointer() uint64 {
 
 // Metatable returns the metatable of the LuaUserData.
 func (l *LuaUserData) Metatable() (*LuaTable, error) {
+	if l.lua.object.IsClosed() {
+		return nil, fmt.Errorf("cannot access metatable of userdata on closed Lua VM")
+	}
+
 	l.object.RLock()
 	defer l.object.RUnlock()
 

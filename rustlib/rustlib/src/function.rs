@@ -157,6 +157,19 @@ pub extern "C-unwind" fn luago_function_to_pointer(f: *mut mluau::Function) -> u
 }
 
 #[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_function_equals(f: *mut mluau::Function, f2: *mut mluau::Function) -> bool {
+    // Safety: Assume table is a valid, non-null pointer to a Lua Table
+    if f.is_null() || f2.is_null() {
+        return f.is_null() && f2.is_null(); // If both are null, they are equal
+    }
+
+    let f1 = unsafe { &*f };
+    let f2 = unsafe { &*f2 };
+
+    f1 == f2
+}
+
+#[unsafe(no_mangle)]
 pub extern "C-unwind" fn luago_free_function(f: *mut mluau::Function) {
     // Safety: Assume function is a valid, non-null pointer to a Lua function
     if f.is_null() {

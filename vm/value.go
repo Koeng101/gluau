@@ -437,6 +437,10 @@ func destroyValue(item C.struct_GoLuaValue) {
 //
 // Internal API: do not use unless you know what you're doing
 func (l *Lua) valueFromC(item C.struct_GoLuaValue) Value {
+	if l == nil {
+		panic("internal safety check failure: Lua instance is nil, cannot perform valueFromC (this is a bug, please report it)")
+	}
+
 	switch item.tag {
 	case C.LuaValueTypeNil:
 		return &ValueNil{}
@@ -459,7 +463,7 @@ func (l *Lua) valueFromC(item C.struct_GoLuaValue) Value {
 	case C.LuaValueTypeString:
 		ptrToPtr := (**C.struct_LuaString)(unsafe.Pointer(&item.data))
 		strPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
-		str := &LuaString{object: newObject(strPtr, stringTab)}
+		str := &LuaString{object: newObject(strPtr, stringTab), lua: l}
 		return &ValueString{value: str}
 	case C.LuaValueTypeTable:
 		ptrToPtr := (**C.struct_LuaTable)(unsafe.Pointer(&item.data))
@@ -469,17 +473,17 @@ func (l *Lua) valueFromC(item C.struct_GoLuaValue) Value {
 	case C.LuaValueTypeFunction:
 		ptrToPtr := (**C.struct_LuaFunction)(unsafe.Pointer(&item.data))
 		funcPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
-		funct := &LuaFunction{object: newObject(funcPtr, functionTab)}
+		funct := &LuaFunction{object: newObject(funcPtr, functionTab), lua: l}
 		return &ValueFunction{value: funct}
 	case C.LuaValueTypeThread:
 		ptrToPtr := (**C.struct_LuaThread)(unsafe.Pointer(&item.data))
 		threadPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
-		thread := &LuaThread{object: newObject(threadPtr, threadTab)}
+		thread := &LuaThread{object: newObject(threadPtr, threadTab), lua: l}
 		return &ValueThread{value: thread}
 	case C.LuaValueTypeUserData:
 		ptrToPtr := (**C.struct_LuaUserData)(unsafe.Pointer(&item.data))
 		udPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
-		udt := &LuaUserData{object: newObject(udPtr, userdataTab)}
+		udt := &LuaUserData{object: newObject(udPtr, userdataTab), lua: l}
 		return &ValueUserData{value: udt}
 	case C.LuaValueTypeBuffer:
 		bufferPtrPtr := (**C.void)(unsafe.Pointer(&item.data))
@@ -512,6 +516,10 @@ func (l *Lua) valueFromC(item C.struct_GoLuaValue) Value {
 // In particular, ValueFromC should *never* be called directly on the result of this function,
 // as it may lead to memory corruption or undefined behavior.
 func (l *Lua) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
+	if l == nil {
+		panic("internal safety check failure: Lua instance is nil, cannot perform _directValueToC (this is a bug, please report it)")
+	}
+
 	var cVal C.struct_GoLuaValue
 	switch value.Type() {
 	case LuaValueNil:
@@ -538,6 +546,9 @@ func (l *Lua) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
 		*(*[3]float32)(unsafe.Pointer(&cVal.data)) = vecVal.value
 	case LuaValueString:
 		strVal := value.(*ValueString)
+		if strVal.value.lua != l {
+			return cVal, errors.New("cannot convert LuaString from different Lua instance")
+		}
 		ptr, err := strVal.value.object.UnsafePointer()
 		if err != nil {
 			return cVal, errors.New("cannot convert closed LuaString to C value")
@@ -546,6 +557,9 @@ func (l *Lua) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueTable:
 		tabVal := value.(*ValueTable)
+		if tabVal.value.lua != l {
+			return cVal, errors.New("cannot convert LuaTable from different Lua instance")
+		}
 		ptr, err := tabVal.value.object.UnsafePointer()
 		if err != nil {
 			return cVal, errors.New("cannot convert closed LuaTable to C value")
@@ -554,6 +568,9 @@ func (l *Lua) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueFunction:
 		funcVal := value.(*ValueFunction)
+		if funcVal.value.lua != l {
+			return cVal, errors.New("cannot convert LuaFunction from different Lua instance")
+		}
 		ptr, err := funcVal.value.object.UnsafePointer()
 		if err != nil {
 			return cVal, errors.New("cannot convert closed LuaFunction to C value")
@@ -562,6 +579,9 @@ func (l *Lua) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueThread:
 		threadVal := value.(*ValueThread)
+		if threadVal.value.lua != l {
+			return cVal, errors.New("cannot convert LuaThread from different Lua instance")
+		}
 		if threadVal.value == nil {
 			return cVal, errors.New("cannot convert nil LuaThread to C value")
 		}
@@ -569,6 +589,9 @@ func (l *Lua) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(threadVal.value)
 	case LuaValueUserData:
 		udVal := value.(*ValueUserData)
+		if udVal.value.lua != l {
+			return cVal, errors.New("cannot convert LuaUserData from different Lua instance")
+		}
 		ptr, err := udVal.value.object.UnsafePointer()
 		if err != nil {
 			return cVal, errors.New("cannot convert closed LuaUserData to C value")

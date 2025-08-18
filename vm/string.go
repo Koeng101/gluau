@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"fmt"
 	"unsafe"
 )
 
@@ -17,11 +18,16 @@ var stringTab = objectTab{
 
 // A LuaString is an abstraction over a Lua string object.
 type LuaString struct {
+	lua    *Lua // The Lua VM wrapper that owns this string
 	object *object
 }
 
 // Returns the LuaString as a byte slice
 func (l *LuaString) Bytes() []byte {
+	fmt.Println("l.lua:", l.lua)
+	if l.lua.object.IsClosed() {
+		return nil // Return nil if the Lua VM is closed
+	}
 	l.object.RLock()
 	defer l.object.RUnlock()
 	ptr, err := l.object.PointerNoLock()
@@ -35,6 +41,10 @@ func (l *LuaString) Bytes() []byte {
 
 // Returns the LuaString as a byte slice with nul terminator
 func (l *LuaString) BytesWithNul() []byte {
+	if l.lua.object.IsClosed() {
+		return nil // Return nil if the Lua VM is closed
+	}
+
 	l.object.RLock()
 	defer l.object.RUnlock()
 	ptr, err := l.object.PointerNoLock()
@@ -52,6 +62,10 @@ func (l *LuaString) BytesWithNul() []byte {
 // This pointer is only useful for hashing/debugging
 // and cannot be converted back to the original Lua string object.
 func (l *LuaString) Pointer() uint64 {
+	if l.lua.object.IsClosed() {
+		return 0 // Return nil if the Lua VM is closed
+	}
+
 	l.object.RLock()
 	defer l.object.RUnlock()
 	lptr, err := l.object.PointerNoLock()
