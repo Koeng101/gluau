@@ -3,6 +3,6 @@
 package vm
 
 /*
-#cgo LDFLAGS: -L../rustlib -lrustlib -lstdc++ -lm -ldl
+#cgo LDFLAGS: -L../rustlib -lrustlib_linux_amd64 -lstdc++ -lm -ldl
 */
 import "C"
