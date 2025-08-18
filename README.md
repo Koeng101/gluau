@@ -96,3 +96,7 @@ gluau achieves this feat by using a Rust proxy layer to actually manage the Lua 
         return nil
     })
 ```
+
+## Windows Note
+
+On Windows, you will need to install MinGW. Also, you may need to copy `libstdc++-6.dll` and `libgcc_s_seh-1.dll` from your MinGW installation to the same directory as your Go executable, or ensure it is in your PATH.

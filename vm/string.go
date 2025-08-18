@@ -41,7 +41,7 @@ func (l *LuaString) Bytes() []byte {
 }
 
 // Returns the LuaString as a byte slice with nul terminator
-func (l *LuaString) BytesWithNul() []byte {
+func (l *LuaString) BytesWithNUL() []byte {
 	if l.lua.object.IsClosed() {
 		return nil // Return nil if the Lua VM is closed
 	}
