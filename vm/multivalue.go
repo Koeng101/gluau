@@ -30,17 +30,6 @@ func (l *Lua) newMultiValueWithCapacity(cap uint64) *luaMultiValue {
 	return mv
 }
 
-// Add a Lua value to the luaMultiValue.
-func (l *luaMultiValue) push(value Value) error {
-	luaValue, err := l.lua.valueToC(value)
-	if err != nil {
-		return err // Return error if the value cannot be converted
-	}
-
-	C.luago_multivalue_push(l.ptr, luaValue)
-	return nil
-}
-
 // Pop a Lua value from the luaMultiValue.
 //
 // This pops the first value in the multivalue, not the last one.
@@ -56,13 +45,25 @@ func (l *luaMultiValue) len() uint64 {
 
 // fromValues takes a []Value and makes a MultiValue
 func (l *Lua) multiValueFromValues(values []Value) (*luaMultiValue, error) {
-	mw := l.newMultiValueWithCapacity(uint64(len(values)))
-	for _, v := range values {
-		err := mw.push(v)
+	created := []C.struct_GoLuaValue{}
+	for _, value := range values {
+		luaValue, err := l.valueToC(value)
 		if err != nil {
-			mw.close()
-			return nil, err
+			// Destroy the values created so far
+			// to avoid a memory leak
+			for _, createdValue := range created {
+				destroyValue(createdValue)
+			}
+
+			return nil, err // Return error if the value cannot be converted
 		}
+		created = append(created, luaValue)
+	}
+
+	mw := l.newMultiValueWithCapacity(uint64(len(values)))
+
+	for _, v := range created {
+		C.luago_multivalue_push(mw.ptr, v)
 	}
 
 	return mw, nil

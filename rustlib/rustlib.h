@@ -105,6 +105,7 @@ struct GoLuaValue {
 };
 
 struct GoLuaValue luago_value_clone(struct GoLuaValue value);
+void luago_value_destroy(struct GoLuaValue value);
 
 struct ErrorVariant* luago_error_new(const char* str, size_t len);
 struct LuaStringBytes luago_error_get_string(struct ErrorVariant* ptr);

@@ -427,6 +427,11 @@ func cloneValue(item C.struct_GoLuaValue) C.struct_GoLuaValue {
 	return C.luago_value_clone(item)
 }
 
+// destroyValue destroys a C struct_GoLuaValue.
+func destroyValue(item C.struct_GoLuaValue) {
+	C.luago_value_destroy(item)
+}
+
 // ValueFromC converts a C struct_GoLuaValue to a Go Value interface.
 // Note: this does not clone the value, it simply converts it.
 //

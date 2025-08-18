@@ -254,6 +254,69 @@ impl GoLuaValue {
         }
     }
 
+    /// Drops a GoLuaValue.
+    /// # Safety
+    /// This function destroys the GoLuaValue
+    pub fn drop_owned(self) {
+        match self.tag {
+            LuaValueType::Nil | LuaValueType::Boolean | LuaValueType::LightUserData | LuaValueType::Integer | LuaValueType::Number | LuaValueType::Vector => {
+                // No-op for now
+            },
+            LuaValueType::String => {
+                let string_ptr = unsafe { self.data.string };
+                if !string_ptr.is_null() {
+                    // Safety: Avoid free'ing the string pointer here, as it is managed by Go
+                    unsafe { drop(Box::from_raw(string_ptr)) };
+                }
+            },
+            LuaValueType::Table => {
+                let table_ptr = unsafe { self.data.table };
+                if !table_ptr.is_null() {
+                    // Safety: Avoid free'ing the table pointer here, as it is managed by Go
+                    unsafe { drop(Box::from_raw(table_ptr)) };
+                }
+            },
+            LuaValueType::Function => {
+                let function_ptr = unsafe { self.data.function };
+                if !function_ptr.is_null() {
+                    // Safety: Avoid free'ing the function pointer here, as it is managed by Go
+                    unsafe { drop(Box::from_raw(function_ptr)) };
+                }
+            },
+            LuaValueType::Thread => {
+                let thread_ptr = unsafe { self.data.thread };
+                if !thread_ptr.is_null() {
+                    // Safety: Avoid free'ing the thread pointer here, as it is managed by Go
+                    unsafe { drop(Box::from_raw(thread_ptr)) };
+                }
+            },
+            LuaValueType::UserData => {
+                let userdata_ptr = unsafe { self.data.userdata };
+                if !userdata_ptr.is_null() {
+                    // Safety: Avoid free'ing the userdata pointer here, as it is managed by Go
+                    unsafe { drop(Box::from_raw(userdata_ptr)) };
+                }
+            },
+            LuaValueType::Buffer => {
+                let buffer_ptr = unsafe { self.data.buffer };
+                if !buffer_ptr.is_null() {
+                    // Safety: Avoid free'ing the buffer pointer here, as it is managed by Go
+                    unsafe { drop(Box::from_raw(buffer_ptr)) };
+                }
+            },
+            LuaValueType::Error => {
+                let error_ptr = unsafe { self.data.error };
+                if !error_ptr.is_null() {
+                    // Safety: Avoid free'ing the error pointer here, as it is managed by Go
+                    unsafe { drop(Box::from_raw(error_ptr)) };
+                }
+            },
+            LuaValueType::Other => {
+                // Handle other types, currently no-op
+            },
+        }
+    }
+
     pub fn from_owned(value: mluau::Value) -> Self {
         let tag = LuaValueType::from_value(&value);
         let data = match value {
@@ -290,6 +353,12 @@ impl GoLuaValue {
 pub extern "C-unwind" fn luago_value_clone(value: GoLuaValue) -> GoLuaValue {
     let cloned_value = value.clone();
     cloned_value
+}
+
+// Destroys a GoLuaValue
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_value_destroy(value: GoLuaValue) {
+    value.drop_owned();
 }
 
 // Creates a new error variant given char array and length

@@ -253,6 +253,11 @@ func (vs *ValueSet) PushFunction(value *vm.LuaFunction) {
 	vs.values = append(vs.values, value.ToValue())
 }
 
+// Pushes a LuaThread value to the ValueSet
+func (vs *ValueSet) PushThread(value *vm.LuaThread) {
+	vs.values = append(vs.values, value.ToValue())
+}
+
 // Pushes a LuaUserData value to the ValueSet
 func (vs *ValueSet) PushUserData(value *vm.LuaUserData) {
 	vs.values = append(vs.values, value.ToValue())
