@@ -190,9 +190,16 @@ func main() {
 	fmt.Println("Lua empty string as bytes after free (should be empty/nil):", luaEmptyString.Bytes())
 
 	// Create a Lua table
+	fmt.Println("Current memory usage:", vm.UsedMemory())
+	fmt.Println("Current memory limit:", vm.MemoryLimit())
 	if err := vm.SetMemoryLimit(100000000000000); err != nil {
 		panic(fmt.Sprintf("Failed to set memory limit: %v", err))
 	}
+	if vm.MemoryLimit() != 100000000000000 {
+		panic(fmt.Sprintf("Expected memory limit to be 100000000000000, got %d", vm.MemoryLimit()))
+	}
+	fmt.Println("New memory limit set to:", vm.MemoryLimit())
+
 	luaTable, err := vm.CreateTableWithCapacity(100000000, 10)
 	if err != nil {
 		fmt.Println("Error creating Lua table:", err)

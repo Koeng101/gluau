@@ -78,6 +78,34 @@ func (l *Lua) SetMemoryLimit(limit int) error {
 	return nil
 }
 
+// UsedMemory returns the amount of memory used by the Lua VM.
+func (l *Lua) UsedMemory() int {
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return 0 // Return 0 if the Lua VM is closed
+	}
+
+	used := C.luago_used_memory(lua)
+	return int(used)
+}
+
+// MemoryLimit returns the memory limit set for the Lua VM.
+func (l *Lua) MemoryLimit() int {
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return 0 // Return 0 if the Lua VM is closed
+	}
+
+	limit := C.luago_memory_limit(lua)
+	return int(limit)
+}
+
 // Sandbox enables or disables the sandbox mode for the Luau VM.
 //
 // This method, in particular:

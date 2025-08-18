@@ -20,6 +20,8 @@ struct CompilerOpts {
 struct Lua* newluavm();
 void luavm_setcompileropts(struct Lua* ptr, struct CompilerOpts opts);
 struct GoNoneResult luavm_setmemorylimit(struct Lua* ptr, size_t limit);
+size_t luago_used_memory(struct Lua* ptr);
+size_t luago_memory_limit(struct Lua* ptr);
 struct GoNoneResult luavm_sandbox(struct Lua* ptr, bool enabled);
 struct LuaTable* luago_globals(struct Lua* ptr);
 struct GoNoneResult luago_setglobals(struct Lua* ptr, struct LuaTable* globals);

@@ -175,6 +175,28 @@ pub extern "C-unwind" fn luago_yield_with(ptr: *mut mluau::Lua, args: *mut GoMul
 }
 
 #[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_used_memory(ptr: *mut mluau::Lua) -> usize {
+    // Safety: Assume ptr is a valid, non-null pointer to a Lua
+    if ptr.is_null() {
+        return 0;
+    }
+
+    let lua = unsafe { &*ptr };
+    lua.used_memory()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn luago_memory_limit(ptr: *mut mluau::Lua) -> usize {
+    // Safety: Assume ptr is a valid, non-null pointer to a Lua
+    if ptr.is_null() {
+        return 0;
+    }
+
+    let lua = unsafe { &*ptr };
+    lua.memory_limit().unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
 pub extern "C-unwind" fn freeluavm(ptr: *mut mluau::Lua) {
     // Safety: Assume ptr is a valid, non-null pointer to a mluau::Lua
     // and that ownership is being transferred back to Rust to be dropped.
