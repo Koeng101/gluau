@@ -9,6 +9,7 @@ pub mod compiler;
 pub mod chunk;
 pub mod userdata;
 pub mod thread;
+pub mod buffer;
 
 use std::ffi::c_void;
 

@@ -229,12 +229,12 @@ func (l *LuaThread) Pointer() uint64 {
 
 	l.object.RLock()
 	defer l.object.RUnlock()
-	lptr, err := l.object.PointerNoLock()
+	lptr, err := l.innerPtr()
 	if err != nil {
 		return 0 // Return 0 if the object is closed
 	}
 
-	ptr := C.luago_thread_to_pointer((*C.struct_LuaThread)(unsafe.Pointer(lptr)))
+	ptr := C.luago_thread_to_pointer(lptr)
 	return uint64(ptr)
 }
 

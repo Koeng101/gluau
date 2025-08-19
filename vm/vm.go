@@ -609,6 +609,32 @@ func (l *Lua) CreateThread(fn *LuaFunction) (*LuaThread, error) {
 	return &LuaThread{object: newObject((*C.void)(unsafe.Pointer(res.value)), threadTab), lua: l}, nil
 }
 
+// CreateBuffer creates a LuaBuffer from a byte slice.
+func (l *Lua) CreateBuffer(s []byte) (*LuaBuffer, error) {
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	lua, err := l.lua()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(s) == 0 {
+		// Passing nil to luago_create_buffer creates an empty buffer.
+		res := C.luago_create_buffer(lua, (*C.char)(nil), C.size_t(len(s)))
+		if res.error != nil {
+			return nil, moveErrorToGo(res.error)
+		}
+		return &LuaBuffer{object: newObject((*C.void)(unsafe.Pointer(res.value)), bufferTab), lua: l}, nil
+	}
+
+	res := C.luago_create_buffer(lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
+	if res.error != nil {
+		return nil, moveErrorToGo(res.error)
+	}
+	return &LuaBuffer{object: newObject((*C.void)(unsafe.Pointer(res.value)), bufferTab), lua: l}, nil
+}
+
 // LoadChunk loads a Lua chunk from the given options.
 func (l *Lua) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 	l.object.RLock()

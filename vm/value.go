@@ -484,24 +484,39 @@ func (v *ValueUserData) Equals(other Value) (bool, error) {
 }
 
 type ValueBuffer struct {
-	value *C.void // TODO
+	value *LuaBuffer
 }
 
+func (v *ValueBuffer) Value() *LuaBuffer {
+	return v.value
+}
 func (v *ValueBuffer) Type() LuaValueType {
 	return LuaValueBuffer
 }
 func (v *ValueBuffer) Close() error {
-	// TODO: Implement buffer
-	return nil
+	return v.value.Close() // Close the LuaBuffer
 }
 func (v *ValueBuffer) object() *object {
-	return nil // Buffer has no underlying object
+	return v.value.object // Return the underlying object of the LuaBuffer
 }
 func (v *ValueBuffer) String() string {
-	return "ValueBuffer: <not implemented>" // TODO: Implement buffer string representation
+	if v.value == nil {
+		return "<nil ValueBuffer>"
+	}
+	return "ValueBuffer: " + v.value.String()
 }
 func (v *ValueBuffer) Equals(other Value) (bool, error) {
-	return false, fmt.Errorf("ValueBuffer does not support equality comparison") // TODO: Implement buffer equality
+	if other == nil {
+		return false, nil // Nil is not equal to any buffer
+	}
+	if other.Type() != LuaValueBuffer {
+		return false, nil // Only equal to other buffers
+	}
+	otherBuf := other.(*ValueBuffer)
+	if v.value == nil || otherBuf.value == nil {
+		return v.value == nil && otherBuf.value == nil, nil // Both nil are equal
+	}
+	return v.value.Equals(otherBuf.value), nil // Compare buffer content
 }
 
 type ValueOther struct {
@@ -644,9 +659,10 @@ func (l *Lua) valueFromC(item C.struct_GoLuaValue) Value {
 		udt := &LuaUserData{object: newObject(udPtr, userdataTab), lua: l}
 		return &ValueUserData{value: udt}
 	case C.LuaValueTypeBuffer:
-		bufferPtrPtr := (**C.void)(unsafe.Pointer(&item.data))
-		bufferPtr := *bufferPtrPtr
-		return &ValueBuffer{value: bufferPtr} // TODO: Support buffers
+		ptrToPtr := (**C.struct_LuaBuffer)(unsafe.Pointer(&item.data))
+		bufPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
+		buf := &LuaBuffer{object: newObject(bufPtr, bufferTab), lua: l}
+		return &ValueBuffer{value: buf}
 	case C.LuaValueTypeOther:
 		// Currently, always nil
 		return &ValueOther{value: nil} // TODO: Support other types
@@ -717,7 +733,7 @@ func (l *Lua) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
 		if err != nil {
 			return cVal, errors.New("cannot convert closed LuaTable to C value")
 		}
-		cVal.tag = C.LuaValueTypeString
+		cVal.tag = C.LuaValueTypeTable
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueFunction:
 		funcVal := value.(*ValueFunction)
@@ -752,12 +768,16 @@ func (l *Lua) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
 		cVal.tag = C.LuaValueTypeUserData
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueBuffer:
-		bufferVal := value.(*ValueBuffer)
-		if bufferVal.value == nil {
-			return cVal, errors.New("cannot convert nil LuaBuffer to C value")
+		bufVal := value.(*ValueBuffer)
+		if bufVal.value.lua != l {
+			return cVal, errors.New("cannot convert LuaBuffer from different Lua instance")
+		}
+		ptr, err := bufVal.value.object.UnsafePointer()
+		if err != nil {
+			return cVal, errors.New("cannot convert closed LuaBuffer to C value")
 		}
 		cVal.tag = C.LuaValueTypeBuffer
-		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(bufferVal.value)
+		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueOther:
 		// Currently, always nil
 		cVal.tag = C.LuaValueTypeOther

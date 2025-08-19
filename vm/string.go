@@ -21,6 +21,14 @@ type LuaString struct {
 	object *object
 }
 
+func (l *LuaString) innerPtr() (*C.struct_LuaString, error) {
+	ptr, err := l.object.PointerNoLock()
+	if err != nil {
+		return nil, err // Return error if the object is closed
+	}
+	return (*C.struct_LuaString)(unsafe.Pointer(ptr)), nil
+}
+
 // Returns the LuaString as a byte slice
 func (l *LuaString) Bytes() []byte {
 	if l.lua.object.IsClosed() {
@@ -28,16 +36,13 @@ func (l *LuaString) Bytes() []byte {
 	}
 	l.object.RLock()
 	defer l.object.RUnlock()
-	ptr, err := l.object.PointerNoLock()
+	ptr, err := l.innerPtr()
 	if err != nil {
 		return nil // Return nil if the object is closed
 	}
-	data := C.luago_string_as_bytes((*C.struct_LuaString)(unsafe.Pointer(ptr)))
-	if data.data == nil {
-		return nil
-	}
-	goSlice := C.GoBytes(unsafe.Pointer(data.data), C.int(data.len))
-	return goSlice
+	data := C.luago_string_as_bytes(ptr)
+
+	return moveBytesToGo(data)
 }
 
 // Returns the LuaString as a byte slice with nul terminator
@@ -48,18 +53,13 @@ func (l *LuaString) BytesWithNUL() []byte {
 
 	l.object.RLock()
 	defer l.object.RUnlock()
-	ptr, err := l.object.PointerNoLock()
+	ptr, err := l.innerPtr()
 	if err != nil {
 		return nil // Return nil if the object is closed
 	}
-	data := C.luago_string_as_bytes_with_nul((*C.struct_LuaString)(unsafe.Pointer(ptr)))
+	data := C.luago_string_as_bytes_with_nul(ptr)
 
-	if data.data == nil {
-		return nil
-	}
-
-	goSlice := C.GoBytes(unsafe.Pointer(data.data), C.int(data.len))
-	return goSlice
+	return moveBytesToGo(data)
 }
 
 // Returns a 'pointer' to a Lua-owned string
@@ -73,21 +73,41 @@ func (l *LuaString) Pointer() uint64 {
 
 	l.object.RLock()
 	defer l.object.RUnlock()
-	lptr, err := l.object.PointerNoLock()
+	lptr, err := l.innerPtr()
 	if err != nil {
 		return 0 // Return 0 if the object is closed
 	}
 
-	ptr := C.luago_string_to_pointer((*C.struct_LuaString)(unsafe.Pointer(lptr)))
+	ptr := C.luago_string_to_pointer(lptr)
 	return uint64(ptr)
 }
 
 // Equals checks if the LuaString equals another LuaString
 // in terms of string content.
-//
-// Equivalent to l.String() == other.String().
 func (l *LuaString) Equals(other *LuaString) bool {
-	return (l == nil && other == nil) || (l.String() == other.String())
+	if l.lua.object.IsClosed() {
+		return false // Return false if the Lua VM is closed
+	}
+
+	if other == nil || l.lua != other.lua {
+		return false // Return false if the Lua instances are different
+	}
+
+	l.object.RLock()
+	defer l.object.RUnlock()
+	other.object.RLock()
+	defer other.object.RUnlock()
+
+	ptr, err := l.innerPtr()
+	if err != nil {
+		return false // Return error if the object is closed
+	}
+	ptr2, err := other.innerPtr()
+	if err != nil {
+		return false // Return error if the other object is closed
+	}
+
+	return bool(C.luago_string_equals(ptr, ptr2))
 }
 
 // String returns the LuaString as a Go string.

@@ -641,5 +641,83 @@ func main() {
 		panic("val is not nil")
 	}
 
+	valuePassthroughFn, err := vm3.LoadChunk(vmlib.ChunkOpts{
+		Code: "local v = ...; return v",
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	// Buffer
+	buffer := vmutils.Must(vm3.CreateBuffer([]byte("test buffer data")))
+	if string(buffer.Bytes()) != "test buffer data" {
+		panic("buffer bytes mismatch")
+	}
+	vmutils.MustOk(buffer.WriteBytes(0, []byte("ob")))
+	if string(buffer.Bytes()) != "obst buffer data" {
+		panic("buffer bytes mismatch after write")
+	}
+	bufferPtr := buffer.Pointer()
+	fmt.Println("Lua buffer created successfully:", buffer)
+	res, err = valuePassthroughFn.Call(buffer.ToValue()) // Takes ownership of the buffer (hence the above bufferPtr)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to call Lua function with buffer: %v", err))
+	}
+	if len(res) != 1 || res[0].Type() != vmlib.LuaValueBuffer {
+		panic(fmt.Sprintf("Expected LuaValueBuffer, got %d", res[0].Type()))
+	}
+	fmt.Println("Lua buffer passed through function successfully:", res[0].(*vmlib.ValueBuffer).Value().String())
+	if res[0].(*vmlib.ValueBuffer).Value().Pointer() != bufferPtr {
+		panic("Returned buffer pointer does not match original buffer pointer")
+	}
+
+	// String
+	luaString = vmutils.Must(vm3.CreateString("test string data"))
+	luaStringPtr := luaString.Pointer()
+	fmt.Println("Lua string created successfully:", luaString)
+	res, err = valuePassthroughFn.Call(luaString.ToValue()) // Takes ownership of the string (hence the above luaStringPtr)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to call Lua function with string: %v", err))
+	}
+	if len(res) != 1 || res[0].Type() != vmlib.LuaValueString {
+		panic(fmt.Sprintf("Expected LuaValueString, got %d", res[0].Type()))
+	}
+	fmt.Println("Lua string passed through function successfully:", res[0].(*vmlib.ValueString).Value().String())
+	if res[0].(*vmlib.ValueString).Value().Pointer() != luaStringPtr {
+		panic("Returned string pointer does not match original string pointer")
+	}
+
+	// Table
+	luaTable = vmutils.Must(vm3.CreateTable())
+	luaTablePtr := luaTable.Pointer()
+	fmt.Println("Lua table created successfully:", luaTable)
+	res, err = valuePassthroughFn.Call(luaTable.ToValue()) // Takes ownership of the table (hence the above luaTablePtr)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to call Lua function with table: %v", err))
+	}
+	if len(res) != 1 || res[0].Type() != vmlib.LuaValueTable {
+		panic(fmt.Sprintf("Expected LuaValueTable, got %d", res[0].Type()))
+	}
+	fmt.Println("Lua table passed through function successfully:", res[0].(*vmlib.ValueTable).Value().String())
+	if res[0].(*vmlib.ValueTable).Value().Pointer() != luaTablePtr {
+		panic("Returned table pointer does not match original table pointer")
+	}
+
+	// UserData
+	ud = vmutils.Must(vm3.CreateUserData("test userdata", res[0].(*vmlib.ValueTable).Value()))
+	udPtr := ud.Pointer()
+	fmt.Println("Lua user data created successfully:", ud)
+	res, err = valuePassthroughFn.Call(ud.ToValue()) // Takes ownership of the user data (hence the above udPtr)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to call Lua function with user data: %v", err))
+	}
+	if len(res) != 1 || res[0].Type() != vmlib.LuaValueUserData {
+		panic(fmt.Sprintf("Expected LuaValueUserData, got %d", res[0].Type()))
+	}
+	fmt.Println("Lua user data passed through function successfully:", res[0].(*vmlib.ValueUserData).Value())
+	if res[0].(*vmlib.ValueUserData).Value().Pointer() != udPtr {
+		panic("Returned user data pointer does not match original user data pointer")
+	}
+
 	vm3.Close()
 }

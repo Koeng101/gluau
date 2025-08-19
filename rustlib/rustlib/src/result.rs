@@ -293,6 +293,34 @@ impl Errorable for GoThreadResult {
 }
 
 #[repr(C)]
+pub struct GoBufferResult {
+    value: *mut mluau::Buffer,
+    error: *mut c_char
+}
+
+impl GoBufferResult {
+    pub fn ok(b: *mut mluau::Buffer) -> Self {
+        Self {
+            value: b,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn err(error: String) -> Self {
+        Self {
+            value: std::ptr::null_mut(),
+            error: to_c_string(error),
+        }
+    }
+}
+
+impl Errorable for GoBufferResult {
+    fn error_variant(s: String) -> Self {
+        Self::err(s)
+    }
+}
+
+#[repr(C)]
 pub struct GoValueResult {
     value: GoLuaValue,
     error: *mut c_char

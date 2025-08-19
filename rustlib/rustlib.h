@@ -62,9 +62,8 @@ struct LuaStringBytes {
 struct LuaStringBytes luago_string_as_bytes(struct LuaString* ptr);
 struct LuaStringBytes luago_string_as_bytes_with_nul(struct LuaString* ptr);
 uintptr_t luago_string_to_pointer(struct LuaString* ptr);
+bool luago_string_equals(struct LuaString* a, struct LuaString* b);
 void luago_free_string(struct LuaString* ptr);
-
-struct ErrorVariant;
 
 // GoLuaValue related stuff
 
@@ -81,8 +80,7 @@ typedef enum LuaValueType {
     LuaValueTypeThread = 9,
     LuaValueTypeUserData = 10,
     LuaValueTypeBuffer = 11,
-    LuaValueTypeError = 12,
-    LuaValueTypeOther = 13
+    LuaValueTypeOther = 12
 } LuaValueType;
 
 typedef union LuaValueData {
@@ -97,7 +95,6 @@ typedef union LuaValueData {
     void* thread; // Pointer to LuaThread
     void* userdata; // Pointer to LuaUserData
     void* buffer; // Pointer to LuaBuffer
-    struct ErrorVariant* error; // Pointer to LuaError
     void* other; // Placeholder for other types
 } LuaValueData;
 
@@ -110,10 +107,6 @@ struct GoLuaValue {
 
 struct GoLuaValue luago_value_clone(struct GoLuaValue value);
 void luago_value_destroy(struct GoLuaValue value);
-
-struct ErrorVariant* luago_error_new(const char* str, size_t len);
-struct LuaStringBytes luago_error_get_string(struct ErrorVariant* ptr);
-void luago_error_free(struct ErrorVariant* ptr);
 
 // Table API
 struct LuaTable;
@@ -202,6 +195,17 @@ struct GoNoneResult luago_yield_with(struct Lua* ptr, struct GoMultiValue* args)
 bool luago_thread_equals(struct LuaThread* a, struct LuaThread* b);
 void luago_free_thread(struct LuaThread* ptr);
 
+// Buffer API
+struct LuaBuffer;
+struct GoBufferResult luago_create_buffer(struct Lua* ptr, const char* s, size_t len);
+uintptr_t luago_buffer_to_pointer(struct LuaBuffer* ptr);
+bool luago_buffer_equals(struct LuaBuffer* a, struct LuaBuffer* b);
+struct LuaStringBytes luago_buffer_to_bytes(struct LuaBuffer* ptr);
+struct LuaStringBytes luago_buffer_read_bytes(struct LuaBuffer* ptr, size_t offset, size_t len);
+void luago_buffer_write_bytes(struct LuaBuffer* ptr, size_t offset, const char* bytes, size_t len);
+void luago_buffer_free_bytes(struct LuaStringBytes bytes);
+size_t luago_buffer_len(struct LuaBuffer* ptr);
+void luago_free_buffer(struct LuaBuffer* ptr);
 
 // Result types
 
@@ -241,6 +245,12 @@ struct GoFunctionResult {
 struct GoThreadResult {
     // Pointer to the LuaThread value
     struct LuaThread* value;
+    // Pointer to a null-terminated C string for the error message
+    char* error;
+};
+struct GoBufferResult {
+    // Pointer to the LuaBuffer value
+    struct LuaBuffer* value;
     // Pointer to a null-terminated C string for the error message
     char* error;
 };

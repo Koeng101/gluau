@@ -104,6 +104,20 @@ pub extern "C" fn luago_string_to_pointer(string: *mut mluau::String) -> usize {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn luago_string_equals(t: *mut mluau::String, t2: *mut mluau::String) -> bool {
+    wrap_failable(|| {
+        if t.is_null() || t2.is_null() {
+            return t.is_null() && t2.is_null(); // If both are null, they are equal
+        }
+
+        let t1 = unsafe { &*t };
+        let t2 = unsafe { &*t2 };
+
+        t1 == t2
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn luago_free_string(string: *mut mluau::String) {
     wrap_failable(|| {
         // Safety: Assume string is a valid, non-null pointer to a Lua String

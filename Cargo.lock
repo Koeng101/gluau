@@ -103,7 +103,7 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 [[package]]
 name = "mlua-sys"
 version = "0.8.3"
-source = "git+https://github.com/mluau/mluau#d95862015dc8d61872fd5acde1df8250eb220352"
+source = "git+https://github.com/mluau/mluau#c713c812c31dbc7f4571862dd5227474469dcb67"
 dependencies = [
  "cc",
  "cfg-if",
@@ -114,7 +114,7 @@ dependencies = [
 [[package]]
 name = "mluau"
 version = "0.11.2"
-source = "git+https://github.com/mluau/mluau#d95862015dc8d61872fd5acde1df8250eb220352"
+source = "git+https://github.com/mluau/mluau#c713c812c31dbc7f4571862dd5227474469dcb67"
 dependencies = [
  "bstr",
  "either",
@@ -165,9 +165,9 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.98"
+version = "1.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7442a916bc70e3bf71a5305a899d53301649d2838345fa309420318b5ffafe8"
+checksum = "89ae43fd86e4158d6db51ad8e2b80f313af9cc74f5c0e03ccb87de09998732de"
 dependencies = [
  "unicode-ident",
 ]
