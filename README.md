@@ -14,6 +14,64 @@ gluau provides Go bindings for the Luau (dialect of Lua) programming language
 - Lua userdata (along with API's)
 - Lua Threads (API's mostly implemented, but not fully. Both resume and yield are supported)
 
+## Roadmap
+
+- Luau buffers
+- Luau require by string
+
+## FAQ
+
+### Setting time limits on execution / propogate errors from Go to Luau
+
+Luau uses interrupts to handle cases like time limits on execution etc. An interrupt is a callback defined in your Go code that is called periodically by Luau during the execution of Luau code. You can use this to implement time limits on execution, or to handle other cases where you need to interrupt the execution of Luau code.
+
+As an example:
+
+```go
+// Set a new interrupt which will yield the execution
+// after 100 milliseconds
+timeNow := time.Now()
+vm.SetInterrupt(func(funcVm *vmlib.CallbackLua) (vmlib.VmState, error) {
+    if time.Since(timeNow) > 10*time.Millisecond {
+        fmt.Println("Interrupt triggered after 1 second on thread with status", funcVm.CurrentThread().Status())
+        return vmlib.VmStateYield, nil // Yield the execution after 100 milliseconds
+    }
+    return vmlib.VmStateContinue, nil // Continue execution
+})
+```
+
+Interrupts can also return errors, which will be propagated to the Luau code like this:
+
+```go
+vm.SetInterrupt(func(funcVm *vmlib.CallbackLua) (vmlib.VmState, error) {
+    return vmlib.VmStateContinue, errors.New("test interrupt error")
+})
+
+// Create a Lua function that will trigger the interrupt
+luaFunc, err = vm.LoadChunk(vmlib.ChunkOpts{
+    Name: "test_interrupt",
+    Code: "while true do end", // Infinite loop to trigger the interrupt
+    Env:  globTab,
+})
+
+if err != nil {
+    panic(err)
+}
+
+// Call the Lua function to trigger the interrupt
+_, err = luaFunc.Call() // This will return an error containing "test interrupt error"
+if err != nil {
+    if !strings.Contains(err.Error(), "test interrupt error") {
+        panic(fmt.Sprintf("Expected interrupt error, got: %v", err))
+    }
+    fmt.Println("Lua function call error (expected due to interrupt):", err)
+} else {
+    panic("Expected an error from the Lua function call due to interrupt")
+}
+```
+
+This can be used for sending 'signals' from Go to Luau.
+
 ## Value Ownership Semantics
 
 There are two cases in which gluau will take ownership of a value:

@@ -603,12 +603,12 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 // Locking behavior: Takes a read-lock on the LuaFunction object
 // and the Lua VM object
 func (l *Lua) CreateThread(fn *LuaFunction) (*LuaThread, error) {
-	if fn.lua != l {
-		return nil, fmt.Errorf("cannot create thread from different Lua instance")
-	}
-
 	if fn == nil {
 		return nil, fmt.Errorf("function cannot be nil")
+	}
+
+	if fn.lua != l {
+		return nil, fmt.Errorf("cannot create thread from different Lua instance")
 	}
 
 	l.object.RLock()

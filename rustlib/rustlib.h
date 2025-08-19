@@ -191,8 +191,11 @@ void luago_free_userdata(struct LuaUserData* ptr);
 // Thread API
 struct LuaThread;
 struct GoThreadResult luago_create_thread(struct Lua* ptr, struct LuaFunction* func);
+struct GoNoneResult luago_reset_thread(struct LuaThread* ptr, struct LuaFunction* func);
 uint8_t luago_thread_status(struct LuaThread* ptr);
+struct GoNoneResult luago_thread_sandbox(struct LuaThread* ptr);
 struct GoMultiValueResult luago_thread_resume(struct LuaThread* ptr, struct GoMultiValue* args);
+struct GoMultiValueResult luago_thread_resume_error(struct LuaThread* ptr, struct GoLuaValue error);
 uintptr_t luago_thread_to_pointer(struct LuaThread* ptr);
 struct GoNoneResult luago_yield_with(struct Lua* ptr, struct GoMultiValue* args);
 bool luago_thread_equals(struct LuaThread* a, struct LuaThread* b);

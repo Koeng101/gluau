@@ -88,6 +88,71 @@ func (l *LuaThread) Status() ThreadStatus {
 	}
 }
 
+// Resets the LuaThread to the initial state of a newly created Luau thread regardless
+// of its current state and sets its function afterwards
+//
+// Locking behavior: Takes a read-lock on the LuaFunction object
+// and the LuaThread object
+func (l *LuaThread) Reset(fn *LuaFunction) error {
+	if fn == nil || l == nil {
+		return fmt.Errorf("neither thread nor function can be nil")
+	}
+
+	if fn.lua != l.lua {
+		return fmt.Errorf("cannot reset thread with function from different Lua VM")
+	}
+
+	l.object.RLock()
+	defer l.object.RUnlock()
+	lPtr, err := l.innerPtr()
+	if err != nil {
+		return err // Return error if the thread is closed
+	}
+
+	fn.object.RLock()
+	defer fn.object.RUnlock()
+	fnPtr, err := fn.innerPtr()
+	if err != nil {
+		return err // Return error if the function is closed
+	}
+
+	res := C.luago_reset_thread(lPtr, fnPtr)
+	if res.error != nil {
+		err := moveErrorToGoError(res.error)
+		return err
+	}
+	return nil
+}
+
+// Sandboxes a Luau thread
+//
+// Under the hood replaces the global environment table with a new table, that performs writes locally and proxies reads to caller's global environment.
+//
+// This mode ideally should be used together with the global sandbox mode Lua.Sandbox.
+//
+// Please note that Luau links environment table with chunk when loading it into Lua state. Therefore you need to load chunks into a thread to link with the thread environment.
+//
+// Locking behavior: This function acquires a read lock on the LuaThread object.
+func (l *LuaThread) Sandbox() error {
+	if l.lua.object.IsClosed() {
+		return fmt.Errorf("cannot sandbox thread on closed Lua VM")
+	}
+
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	ptr, err := l.innerPtr()
+	if err != nil {
+		return err // Return error if the object is closed
+	}
+
+	res := C.luago_thread_sandbox(ptr)
+	if res.error != nil {
+		return moveErrorToGoError(res.error) // Return error if sandboxing failed
+	}
+	return nil // Return nil if sandboxing was successful
+}
+
 // Resume resumes a thread `th`
 //
 // Passes args as arguments to the thread. If the coroutine has called coroutine.yield, it will return these arguments. Otherwise, the coroutine wasn’t yet started, so the arguments are passed to its main function.
@@ -112,6 +177,38 @@ func (l *LuaThread) Resume(args ...Value) ([]Value, error) {
 	}
 
 	res := C.luago_thread_resume(ptr, mw.ptr)
+	if res.error != nil {
+		return nil, moveErrorToGoError(res.error)
+	}
+	rets := &luaMultiValue{ptr: res.value, lua: l.lua}
+	retsMw := rets.take()
+	rets.close()
+	return retsMw, nil
+}
+
+// ResumeError resumes a thread `th` with an error
+//
+// Similar to Resume, but allows the resume to throw an error into the thread.
+//
+// This is a Luau specific extension
+func (l *LuaThread) ResumeError(errorValue Value) ([]Value, error) {
+	if l.lua.object.IsClosed() {
+		return nil, fmt.Errorf("cannot resume thread on closed Lua VM")
+	}
+
+	l.object.RLock()
+	defer l.object.RUnlock()
+
+	ptr, err := l.innerPtr()
+	if err != nil {
+		return nil, err // Return error if the object is closed
+	}
+	errorValueC, err := l.lua.valueToC(errorValue)
+	if err != nil {
+		return nil, err // Return error if the value cannot be converted (diff lua state, closed object, etc)
+	}
+
+	res := C.luago_thread_resume_error(ptr, errorValueC)
 	if res.error != nil {
 		return nil, moveErrorToGoError(res.error)
 	}

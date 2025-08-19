@@ -1,4 +1,4 @@
-use crate::{multivalue::GoMultiValue, result::{wrap_failable, GoMultiValueResult, GoThreadResult}};
+use crate::{multivalue::GoMultiValue, result::{wrap_failable, GoMultiValueResult, GoNoneResult, GoThreadResult}, value::GoLuaValue};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn luago_create_thread(ptr: *mut mluau::Lua, func: *mut mluau::Function) -> GoThreadResult {
@@ -7,12 +7,29 @@ pub extern "C" fn luago_create_thread(ptr: *mut mluau::Lua, func: *mut mluau::Fu
             return GoThreadResult::err("Lua pointer or function pointer is null".to_string());
         }
 
-        let lua = unsafe { &mut *ptr };
+        let lua = unsafe { &*ptr };
         let lua_func = unsafe { &*func };
 
         match lua.create_thread(lua_func.clone()) {
             Ok(thread) => GoThreadResult::ok(Box::into_raw(Box::new(thread))),
             Err(e) => GoThreadResult::err(format!("{e}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_reset_thread(ptr: *mut mluau::Thread, func: *mut mluau::Function) -> GoNoneResult {
+    wrap_failable(|| {
+        if ptr.is_null() || func.is_null() {
+            return GoNoneResult::err("Thread pointer or function pointer is null".to_string());
+        }
+
+        let th = unsafe { &*ptr };
+        let lua_func = unsafe { &*func };
+
+        match th.reset(lua_func.clone()) {
+            Ok(_) => GoNoneResult::ok(),
+            Err(e) => GoNoneResult::err(format!("{e}")),
         }
     })
 }
@@ -38,6 +55,24 @@ pub extern "C" fn luago_thread_status(t: *mut mluau::Thread) -> u8 {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn luago_thread_sandbox(t: *mut mluau::Thread) -> GoNoneResult {
+    wrap_failable(|| {
+        // Safety: Assume t is a valid, non-null pointer to a Lua thread
+        if t.is_null() {
+            return GoNoneResult::err("Thread pointer is null".to_string());
+        }
+
+        let lua_t = unsafe { &*t };
+
+        // Get the status of the Lua thread
+        match lua_t.sandbox() {
+            Ok(_) => GoNoneResult::ok(),
+            Err(e) => GoNoneResult::err(format!("{e}")),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn luago_thread_resume(ptr: *mut mluau::Thread, args: *mut GoMultiValue) -> GoMultiValueResult  {
     wrap_failable(|| {
         if ptr.is_null() {
@@ -58,6 +93,25 @@ pub extern "C" fn luago_thread_resume(ptr: *mut mluau::Thread, args: *mut GoMult
     })
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_thread_resume_error(ptr: *mut mluau::Thread, error: GoLuaValue) -> GoMultiValueResult  {
+    wrap_failable(|| {
+        if ptr.is_null() {
+            return GoMultiValueResult::err("Function pointer is null".to_string());
+        }
+
+        let th = unsafe { &*ptr };
+        
+        // Safety: Go side must ensure values cannot be used after it is set
+        // here as a return value
+        let error = error.to_value_from_owned();
+        let res = th.resume_error::<mluau::MultiValue>(error);
+        match res {
+            Ok(mv) => GoMultiValueResult::ok(GoMultiValue::inst(mv)),
+            Err(e) => GoMultiValueResult::err(format!("{e}"))
+        }
+    })
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn luago_thread_to_pointer(t: *mut mluau::Thread) -> usize {
