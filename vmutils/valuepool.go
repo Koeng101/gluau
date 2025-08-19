@@ -24,14 +24,10 @@ func NewValuePool(lua *vm.Lua, value vm.Value) *ValuePool {
 }
 
 // Value creates a clone of the stored value
-func (vp *ValuePool) Value() (vm.Value, error) {
-	clonedRef, err := vm.CloneValue(vp.lua, vp.value)
-	if err != nil {
-		return nil, err
-	}
-
+func (vp *ValuePool) Value() vm.Value {
+	clonedRef := vp.value.Clone()
 	vp.clones = append(vp.clones, clonedRef)
-	return clonedRef, nil
+	return clonedRef
 }
 
 // Close frees the original value and all cloned values

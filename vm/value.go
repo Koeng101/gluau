@@ -69,11 +69,16 @@ func (l LuaValueType) String() string {
 }
 
 type Value interface {
-	Type() LuaValueType
-	Close() error
-	object() *object // Returns the underlying object for this value
-	String() string  // Returns a string representation of the value
-	Equals(other Value) (bool, error)
+	Type() LuaValueType               // Returns the type of the value
+	Close() error                     // Closes the value and frees any resources associated with it.
+	object() *object                  // Returns the underlying object for this value
+	String() string                   // Returns a string representation of the value
+	Equals(other Value) (bool, error) // Checks if this value equals another value
+
+	// Clones a value to a new instance of Value
+	//
+	// Unlike CloneValue, this may be more performant as it avoids
+	Clone() Value
 }
 
 // ValueNil represents a Lua nil value.
@@ -97,6 +102,9 @@ func (v *ValueNil) Equals(other Value) (bool, error) {
 		return true, nil
 	}
 	return other.Type() == LuaValueNil, nil // Only equal to other nil values
+}
+func (v *ValueNil) Clone() Value {
+	return NewValueNil() // Cloning nil returns another nil
 }
 
 type ValueBoolean struct {
@@ -133,6 +141,9 @@ func (v *ValueBoolean) Equals(other Value) (bool, error) {
 	}
 	otherBool := other.(*ValueBoolean)
 	return v.value == otherBool.value, nil // Compare boolean values
+}
+func (v *ValueBoolean) Clone() Value {
+	return NewValueBoolean(v.value) // Cloning boolean returns another boolean with the same value
 }
 
 // ValueLightUserData is a pointer to an arbitrary C data type.
@@ -173,6 +184,9 @@ func (v *ValueLightUserData) Equals(other Value) (bool, error) {
 	otherData := other.(*ValueLightUserData)
 	return v.value == otherData.value, nil // Compare pointers
 }
+func (v *ValueLightUserData) Clone() Value {
+	return NewValueLightUserData(v.value) // Cloning light user data returns another lightuserdata with the same C pointer
+}
 
 // ValueInteger represents a Lua integer value.
 type ValueInteger struct {
@@ -210,6 +224,9 @@ func (v *ValueInteger) Equals(other Value) (bool, error) {
 	default:
 		return false, nil // Only equal to other integers or numbers
 	}
+}
+func (v *ValueInteger) Clone() Value {
+	return NewValueInteger(v.value) // Cloning integer returns another integer with the same value
 }
 
 // ValueNumber represents a Lua number value.
@@ -250,6 +267,9 @@ func (v *ValueNumber) Equals(other Value) (bool, error) {
 		return false, nil // Only equal to other numbers or integers
 	}
 }
+func (v *ValueNumber) Clone() Value {
+	return NewValueNumber(v.value) // Cloning number returns another number with the same value
+}
 
 // ValueVector represents a Luau vector value (3D vector).
 //
@@ -285,6 +305,9 @@ func (v *ValueVector) Equals(other Value) (bool, error) {
 	}
 	otherVec := other.(*ValueVector)
 	return v.value == otherVec.value, nil // Compare vector values
+}
+func (v *ValueVector) Clone() Value {
+	return NewValueVector(v.value[0], v.value[1], v.value[2]) // Cloning vector returns another vector with the same values
 }
 
 // ValueString represents a Lua string value.
@@ -332,6 +355,13 @@ func (v *ValueString) Equals(other Value) (bool, error) {
 		return false, nil // Only equal to other strings or GoStrings
 	}
 }
+func (v *ValueString) Clone() Value {
+	val, err := v.value.lua.CloneValue(v)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
 
 // ValueTable represents a Lua table value.
 type ValueTable struct {
@@ -372,6 +402,13 @@ func (v *ValueTable) Equals(other Value) (bool, error) {
 	}
 	return v.value.Equals(otherTable.value) // Compare table content
 }
+func (v *ValueTable) Clone() Value {
+	val, err := v.value.lua.CloneValue(v)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
 
 type ValueFunction struct {
 	value *LuaFunction
@@ -407,6 +444,13 @@ func (v *ValueFunction) Equals(other Value) (bool, error) {
 		return v.value == nil && otherFunc.value == nil, nil // Both nil are equal
 	}
 	return v.value.Equals(otherFunc.value), nil // Compare function content
+}
+func (v *ValueFunction) Clone() Value {
+	val, err := v.value.lua.CloneValue(v)
+	if err != nil {
+		panic(err)
+	}
+	return val
 }
 
 type ValueThread struct {
@@ -445,6 +489,13 @@ func (v *ValueThread) Equals(other Value) (bool, error) {
 	}
 	return v.value.Equals(otherThread.value), nil // Compare thread content
 }
+func (v *ValueThread) Clone() Value {
+	val, err := v.value.lua.CloneValue(v)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
 
 type ValueUserData struct {
 	value *LuaUserData
@@ -482,6 +533,13 @@ func (v *ValueUserData) Equals(other Value) (bool, error) {
 	}
 	return v.value.Equals(otherUserData.value), nil // Compare userdata content
 }
+func (v *ValueUserData) Clone() Value {
+	val, err := v.value.lua.CloneValue(v)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
 
 type ValueBuffer struct {
 	value *LuaBuffer
@@ -518,6 +576,13 @@ func (v *ValueBuffer) Equals(other Value) (bool, error) {
 	}
 	return v.value.Equals(otherBuf.value), nil // Compare buffer content
 }
+func (v *ValueBuffer) Clone() Value {
+	val, err := v.value.lua.CloneValue(v)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
 
 type ValueOther struct {
 	value *C.void // TODO
@@ -535,6 +600,9 @@ func (v *ValueOther) String() string {
 }
 func (v *ValueOther) Equals(other Value) (bool, error) {
 	return false, fmt.Errorf("ValueOther does not support equality comparison") // TODO: Implement other value equality
+}
+func (v *ValueOther) Clone() Value {
+	return &ValueOther{value: v.value} // Cloning other returns another ValueOther with the same C pointer
 }
 
 type GoString string
@@ -567,12 +635,18 @@ func (v GoString) Equals(other Value) (bool, error) {
 		return false, nil // Only equal to other GoStrings or LuaStrings
 	}
 }
+func (v GoString) Clone() Value {
+	return GoString(v) // Cloning GoString returns another GoString with the same value
+}
 
 // CloneValue clones a vmlib.Value to a new vmlib.Value
 //
 // Locking behavior: CloneValue acquires a read lock on the object
 // being cloned (value) to ensure it is not closed while cloning.
-func CloneValue(l *Lua, value Value) (Value, error) {
+//
+// Note: You probably want Value.Clone() instead as it is more ergonomic
+// and more performant on primitives
+func (l *Lua) CloneValue(value Value) (Value, error) {
 	if value == nil {
 		return nil, errors.New("cannot clone nil value")
 	}

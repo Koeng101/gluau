@@ -13,10 +13,10 @@ gluau provides Go bindings for the Luau (dialect of Lua) programming language
 - Lua Functions (API's are WIP, but basic creating from both Luau and Go and calling functions is implemented)
 - Lua userdata (along with API's)
 - Lua Threads (API's mostly implemented, but not fully. Both resume and yield are supported)
+- Luau Buffers (along with API's)
 
 ## Roadmap
 
-- Luau buffers
 - Luau require by string
 
 ## FAQ
@@ -75,7 +75,7 @@ This can be used for sending 'signals' from Go to Luau.
 ## Value Ownership Semantics
 
 There are two cases in which gluau will take ownership of a value:
-- When a ``vmlib.Value`` is passed to a function that takes a ``vmlib.Value`` as an argument.
+- When a ``vmlib.Value`` is passed to a function that takes a ``vmlib.Value`` as an argument (outside of ``CloneValue`` and `Value.Clone`).
 - When a ``vmlib.Value`` is returned from a Luau function implemented in Go.
 
 By default, any function in gluau's vm library that takes in a ``vmlib.Value`` will take ownership of the value (and its internals). This means that the value will be closed/disarmed so Go code cannot use it. As such, attempting to recursively disarm a value will return a error.
@@ -102,6 +102,17 @@ if err != nil {
 }
 // The set now takes ownership of the cloned reference, not the original
 err = globTab.Set(vmlib.GoString("_G"), clonedGlobTab)
+if err != nil {
+    panic("failed to set _G")
+}
+```
+
+Because this is a bit long though, gluau provides a more convenient and (sometimes) more performant way as well with the caveat that it panics on failure:
+
+```go
+// The correct way
+// The set now takes ownership of the cloned reference, not the original
+err = globTab.Set(vmlib.GoString("_G"), globTab.ToValue().Clone())
 if err != nil {
     panic("failed to set _G")
 }
