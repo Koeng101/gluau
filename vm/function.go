@@ -55,7 +55,7 @@ func (l *LuaFunction) Call(args ...Value) ([]Value, error) {
 
 	res := C.luago_function_call(ptr, mw.ptr)
 	if res.error != nil {
-		return nil, moveErrorToGoError(res.error)
+		return nil, moveErrorToGo(res.error)
 	}
 	rets := &luaMultiValue{ptr: res.value, lua: l.lua}
 	retsMw := rets.take()
@@ -84,7 +84,7 @@ func (l *LuaFunction) DeepClone() (*LuaFunction, error) {
 
 	res := C.luago_function_deepclone(ptr)
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return nil, err
 	}
 
@@ -143,7 +143,7 @@ func (l *LuaFunction) SetEnvironment(env *LuaTable) (bool, error) {
 
 	res := C.luago_function_set_environment(ptr, (*C.struct_LuaTable)(unsafe.Pointer(envPtr)))
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return false, err
 	}
 

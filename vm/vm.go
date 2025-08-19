@@ -72,7 +72,7 @@ func (l *Lua) SetMemoryLimit(limit int) error {
 	}
 	res := C.luavm_setmemorylimit(lua, C.size_t(limit))
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return err
 	}
 	return nil
@@ -169,7 +169,7 @@ func (l *Lua) SetRegistryValue(key string, value Value) error {
 	if len(key) == 0 {
 		res := C.luago_set_named_registry_value(lua, (*C.char)(nil), 0, valueVal)
 		if res.error != nil {
-			err := moveErrorToGoError(res.error)
+			err := moveErrorToGo(res.error)
 			return err
 		}
 		return nil
@@ -177,7 +177,7 @@ func (l *Lua) SetRegistryValue(key string, value Value) error {
 	keyBytes := []byte(key)
 	res := C.luago_set_named_registry_value(lua, (*C.char)(unsafe.Pointer(&keyBytes[0])), C.size_t(len(key)), valueVal)
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return err
 	}
 	return nil
@@ -196,7 +196,7 @@ func (l *Lua) RegistryValue(key string) (Value, error) {
 	if len(key) == 0 {
 		res := C.luago_named_registry_value(lua, (*C.char)(nil), 0)
 		if res.error != nil {
-			err := moveErrorToGoError(res.error)
+			err := moveErrorToGo(res.error)
 			return nil, err
 		}
 		return l.valueFromC(res.value), nil
@@ -204,7 +204,7 @@ func (l *Lua) RegistryValue(key string) (Value, error) {
 	keyBytes := []byte(key)
 	res := C.luago_named_registry_value(lua, (*C.char)(unsafe.Pointer(&keyBytes[0])), C.size_t(len(key)))
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return nil, err
 	}
 	return l.valueFromC(res.value), nil
@@ -238,7 +238,7 @@ func (l *Lua) Sandbox(enabled bool) error {
 	}
 	res := C.luavm_sandbox(lua, C.bool(enabled))
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return err
 	}
 	return nil
@@ -288,7 +288,7 @@ func (l *Lua) SetGlobals(tab *LuaTable) error {
 	}
 	res := C.luago_setglobals(lua, tabPtr)
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return err
 	}
 	return nil
@@ -329,12 +329,11 @@ func (l *Lua) SetInterrupt(callback InterruptFn) {
 			if r := recover(); r != nil {
 				// Deallocate any existing error
 				if cval.error != nil {
-					C.luago_error_free(cval.error)
+					freeRustString(cval.error)
 				}
 
 				// Replace
-				errBytes := []byte(fmt.Sprintf("panic in CreateFunction callback: %v", r))
-				errv := C.luago_error_new((*C.char)(unsafe.Pointer(&errBytes[0])), C.size_t(len(errBytes)))
+				errv := moveStringToRust(fmt.Sprintf("panic in interrupt callback: %v", r))
 				cval.error = errv // Rust side will deallocate it for us
 			}
 		}()
@@ -350,8 +349,7 @@ func (l *Lua) SetInterrupt(callback InterruptFn) {
 		vmState, err := callback(cbLua)
 
 		if err != nil {
-			errBytes := []byte(err.Error())
-			errv := C.luago_error_new((*C.char)(unsafe.Pointer(&errBytes[0])), C.size_t(len(errBytes)))
+			errv := moveStringToRust(err.Error())
 			cval.error = errv // Rust side will deallocate it for us
 			return
 		}
@@ -421,14 +419,14 @@ func (l *Lua) createString(s []byte) (*LuaString, error) {
 		// Passing nil to luago_create_string creates an empty string.
 		res := C.luago_create_string(lua, (*C.char)(nil), C.size_t(len(s)))
 		if res.error != nil {
-			return nil, moveErrorToGoError(res.error)
+			return nil, moveErrorToGo(res.error)
 		}
 		return &LuaString{object: newObject((*C.void)(unsafe.Pointer(res.value)), stringTab), lua: l}, nil
 	}
 
 	res := C.luago_create_string(lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
 	if res.error != nil {
-		return nil, moveErrorToGoError(res.error)
+		return nil, moveErrorToGo(res.error)
 	}
 	return &LuaString{object: newObject((*C.void)(unsafe.Pointer(res.value)), stringTab), lua: l}, nil
 }
@@ -447,14 +445,14 @@ func (l *Lua) createStringAsPtr(s []byte) (*C.struct_LuaString, error) {
 		// Passing nil to luago_create_string creates an empty string.
 		res := C.luago_create_string(lua, (*C.char)(nil), C.size_t(len(s)))
 		if res.error != nil {
-			return nil, moveErrorToGoError(res.error)
+			return nil, moveErrorToGo(res.error)
 		}
 		return res.value, nil
 	}
 
 	res := C.luago_create_string(lua, (*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
 	if res.error != nil {
-		return nil, moveErrorToGoError(res.error)
+		return nil, moveErrorToGo(res.error)
 	}
 	return res.value, nil
 }
@@ -471,7 +469,7 @@ func (l *Lua) CreateTable() (*LuaTable, error) {
 
 	res := C.luago_create_table(lua)
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return nil, err
 	}
 	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab), lua: l}, nil
@@ -490,30 +488,10 @@ func (l *Lua) CreateTableWithCapacity(narr, nrec int) (*LuaTable, error) {
 
 	res := C.luago_create_table_with_capacity(lua, C.size_t(narr), C.size_t(nrec))
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return nil, err
 	}
 	return &LuaTable{object: newObject((*C.void)(unsafe.Pointer(res.value)), tableTab), lua: l}, nil
-}
-
-// CreateErrorVariant creates a new ErrorVariant from a byte slice.
-//
-// In extremely rare cases, this may return nil if the error creation failed.
-func CreateErrorVariant(s []byte) *ErrorVariant {
-	if len(s) == 0 {
-		// Passing nil to luago_create_string creates an empty string.
-		res := C.luago_error_new((*C.char)(nil), C.size_t(len(s)))
-		if res == nil {
-			return nil // Return nil if the error creation failed
-		}
-		return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
-	}
-
-	res := C.luago_error_new((*C.char)(unsafe.Pointer(&s[0])), C.size_t(len(s)))
-	if res == nil {
-		return nil // Return nil if the error creation failed
-	}
-	return &ErrorVariant{object: newObject((*C.void)(unsafe.Pointer(res)), errorVariantTab)}
 }
 
 type FunctionFn func(funcVm *CallbackLua, args []Value) ([]Value, error)
@@ -544,12 +522,11 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 			if r := recover(); r != nil {
 				// Deallocate any existing error
 				if cval.error != nil {
-					C.luago_error_free(cval.error)
+					freeRustString(cval.error)
 				}
 
 				// Replace
-				errBytes := []byte(fmt.Sprintf("panic in CreateFunction callback: %v", r))
-				errv := C.luago_error_new((*C.char)(unsafe.Pointer(&errBytes[0])), C.size_t(len(errBytes)))
+				errv := moveStringToRust(fmt.Sprintf("panic in CreateFunction callback: %v", r))
 				cval.error = errv // Rust side will deallocate it for us
 			}
 		}()
@@ -570,16 +547,14 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 		values, err := callback(cbLua, args)
 
 		if err != nil {
-			errBytes := []byte(err.Error())
-			errv := C.luago_error_new((*C.char)(unsafe.Pointer(&errBytes[0])), C.size_t(len(errBytes)))
+			errv := moveStringToRust(err.Error())
 			cval.error = errv // Rust side will deallocate it for us
 			return
 		}
 
 		outMw, err := l.multiValueFromValues(values)
 		if err != nil {
-			errBytes := []byte(err.Error())
-			errv := C.luago_error_new((*C.char)(unsafe.Pointer(&errBytes[0])), C.size_t(len(errBytes)))
+			errv := moveStringToRust(err.Error())
 			cval.error = errv // Rust side will deallocate it for us
 			return
 		}
@@ -591,7 +566,7 @@ func (l *Lua) CreateFunction(callback FunctionFn) (*LuaFunction, error) {
 
 	res := C.luago_create_function(lua, cbWrapper.ToC())
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return nil, err
 	}
 
@@ -628,7 +603,7 @@ func (l *Lua) CreateThread(fn *LuaFunction) (*LuaThread, error) {
 
 	res := C.luago_create_thread(lua, fnPtr)
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return nil, err
 	}
 	return &LuaThread{object: newObject((*C.void)(unsafe.Pointer(res.value)), threadTab), lua: l}, nil
@@ -679,7 +654,7 @@ func (l *Lua) LoadChunk(opts ChunkOpts) (*LuaFunction, error) {
 	)
 
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return nil, err
 	}
 	return &LuaFunction{object: newObject((*C.void)(unsafe.Pointer(res.value)), functionTab), lua: l}, nil
@@ -715,7 +690,7 @@ func (l *Lua) CreateUserData(associatedData any, mt *LuaTable) (*LuaUserData, er
 	cDynData := dynData.ToC()
 	res := C.luago_create_userdata(lua, cDynData, mtPtr)
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return nil, err
 	}
 	return &LuaUserData{
@@ -839,7 +814,7 @@ func (c *CallbackLua) YieldWith(args []Value) error {
 
 	res := C.luago_yield_with(lua, mw.ptr)
 	if res.error != nil {
-		return moveErrorToGoError(res.error) // Return error if the yield failed
+		return moveErrorToGo(res.error) // Return error if the yield failed
 	}
 	return nil
 }

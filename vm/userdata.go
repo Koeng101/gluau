@@ -48,7 +48,7 @@ func (l *LuaUserData) AssociatedData() (any, error) {
 
 	res := C.luago_get_userdata_handle(ptr)
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return nil, err
 	}
 
@@ -126,7 +126,7 @@ func (l *LuaUserData) Metatable() (*LuaTable, error) {
 
 	res := C.luago_userdata_metatable(ptr)
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return nil, err
 	}
 

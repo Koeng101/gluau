@@ -26,13 +26,11 @@ const (
 	LuaValueThread        LuaValueType = 9
 	LuaValueUserData      LuaValueType = 10
 	LuaValueBuffer        LuaValueType = 11
-	LuaValueError         LuaValueType = 12
-	LuaValueOther         LuaValueType = 13
+	LuaValueOther         LuaValueType = 12
 
 	// Custom types not sent by Rust ever
 	// to make the library more ergonomic
-	LuaValueCustom_GoString   LuaValueType = 14
-	LuaValueCustom_OwnedValue LuaValueType = 15
+	LuaValueCustom_GoString LuaValueType = 14
 )
 
 func (l LuaValueType) String() string {
@@ -61,8 +59,6 @@ func (l LuaValueType) String() string {
 		return "userdata"
 	case LuaValueBuffer:
 		return "buffer"
-	case LuaValueError:
-		return "error"
 	case LuaValueOther:
 		return "other"
 	case LuaValueCustom_GoString:
@@ -508,43 +504,6 @@ func (v *ValueBuffer) Equals(other Value) (bool, error) {
 	return false, fmt.Errorf("ValueBuffer does not support equality comparison") // TODO: Implement buffer equality
 }
 
-// ValueError represents a Lua error value.
-type ValueError struct {
-	value *ErrorVariant
-}
-
-func (v *ValueError) Value() *ErrorVariant {
-	return v.value
-}
-func (v *ValueError) Type() LuaValueType {
-	return LuaValueError
-}
-func (v *ValueError) Close() error {
-	return v.value.Close()
-}
-func (v *ValueError) object() *object {
-	return v.value.object
-}
-func (v *ValueError) String() string {
-	if v.value == nil {
-		return "<nil ValueError>"
-	}
-	return "ValueError: " + v.value.String()
-}
-func (v *ValueError) Equals(other Value) (bool, error) {
-	if other == nil {
-		return false, nil // Nil is not equal to any error
-	}
-	if other.Type() != LuaValueError {
-		return false, nil // Only equal to other errors
-	}
-	otherError := other.(*ValueError)
-	if v.value == nil || otherError.value == nil {
-		return v.value == nil && otherError.value == nil, nil // Both nil are equal
-	}
-	return v.value.Equals(otherError.value), nil // Compare error content
-}
-
 type ValueOther struct {
 	value *C.void // TODO
 }
@@ -688,11 +647,6 @@ func (l *Lua) valueFromC(item C.struct_GoLuaValue) Value {
 		bufferPtrPtr := (**C.void)(unsafe.Pointer(&item.data))
 		bufferPtr := *bufferPtrPtr
 		return &ValueBuffer{value: bufferPtr} // TODO: Support buffers
-	case C.LuaValueTypeError:
-		ptrToPtr := (**C.struct_ErrorVariant)(unsafe.Pointer(&item.data))
-		strPtr := (*C.void)(unsafe.Pointer(*ptrToPtr))
-		str := &ErrorVariant{object: newObject(strPtr, errorVariantTab)}
-		return &ValueError{value: str}
 	case C.LuaValueTypeOther:
 		// Currently, always nil
 		return &ValueOther{value: nil} // TODO: Support other types
@@ -804,14 +758,6 @@ func (l *Lua) _directValueToC(value Value) (C.struct_GoLuaValue, error) {
 		}
 		cVal.tag = C.LuaValueTypeBuffer
 		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(bufferVal.value)
-	case LuaValueError:
-		errVal := value.(*ValueError)
-		ptr, err := errVal.value.object.UnsafePointer()
-		if err != nil {
-			return cVal, errors.New("cannot convert closed ErrorVariant to C value")
-		}
-		cVal.tag = C.LuaValueTypeError
-		*(*unsafe.Pointer)(unsafe.Pointer(&cVal.data)) = unsafe.Pointer(ptr)
 	case LuaValueOther:
 		// Currently, always nil
 		cVal.tag = C.LuaValueTypeOther

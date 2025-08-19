@@ -1,8 +1,8 @@
-use std::ffi::{c_char, c_void};
+use std::ffi::{c_char, c_void, CString};
 
 use mluau::Lua;
 
-use crate::{compiler::CompilerOpts, multivalue::GoMultiValue, result::{wrap_failable, GoNoneResult, GoValueResult}, value::{ErrorVariant, GoLuaValue}, IGoCallback, IGoCallbackWrapper};
+use crate::{compiler::CompilerOpts, multivalue::GoMultiValue, result::{wrap_failable, GoNoneResult, GoValueResult}, value::GoLuaValue, IGoCallback, IGoCallbackWrapper};
 
 // Represents the different standard libraries that can be loaded into the Luau VM.
 bitflags::bitflags! {
@@ -162,7 +162,7 @@ pub struct InterruptData {
 
     // Go side may set this to set a response
     pub vm_state: u8,
-    pub error: *mut ErrorVariant,
+    pub error: *mut c_char,
 }
 
 #[unsafe(no_mangle)]
@@ -191,8 +191,8 @@ pub extern "C" fn luago_set_interrupt(ptr: *mut mluau::Lua, cb: IGoCallback)  {
             let data = unsafe { Box::from_raw(ptr) };
 
             if !data.error.is_null() {
-                let error = unsafe { Box::from_raw(data.error) };
-                return Err(mluau::Error::external(error.error.to_string_lossy()));
+                let error = unsafe { CString::from_raw(data.error) };
+                return Err(mluau::Error::external(error.to_string_lossy()));
             }
             
             match data.vm_state {

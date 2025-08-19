@@ -1,6 +1,6 @@
-use std::ffi::c_void;
+use std::ffi::{c_char, c_void, CString};
 
-use crate::{multivalue::GoMultiValue, result::{wrap_failable, GoBoolResult, GoFunctionResult, GoMultiValueResult}, value::ErrorVariant, IGoCallback, IGoCallbackWrapper};
+use crate::{multivalue::GoMultiValue, result::{wrap_failable, GoBoolResult, GoFunctionResult, GoMultiValueResult}, IGoCallback, IGoCallbackWrapper};
 
 #[repr(C)]
 // NOTE: Aside from the Lua, Rust will deallocate everything
@@ -16,7 +16,7 @@ pub struct FunctionCallbackData {
 
     // Go side may set this to set a response
     pub values: *mut GoMultiValue,
-    pub error: *mut ErrorVariant,
+    pub error: *mut c_char,
 }
 
 #[unsafe(no_mangle)]
@@ -52,8 +52,10 @@ pub extern "C" fn luago_create_function(ptr: *mut mluau::Lua, cb: IGoCallback) -
                     unsafe { drop(Box::from_raw(data.values)) };
                 }
 
-                let error = unsafe { Box::from_raw(data.error) };
-                return Err(mluau::Error::external(error.error.to_string_lossy()));
+                // Safety: Go must not use the error after this point
+                // as it is deallocated here.
+                let error = unsafe { CString::from_raw(data.error) };
+                return Err(mluau::Error::external(error.to_string_lossy()));
             } else {
                 // If values is set, return them to Lua.
                 if !data.values.is_null() {

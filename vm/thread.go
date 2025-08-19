@@ -118,7 +118,7 @@ func (l *LuaThread) Reset(fn *LuaFunction) error {
 
 	res := C.luago_reset_thread(lPtr, fnPtr)
 	if res.error != nil {
-		err := moveErrorToGoError(res.error)
+		err := moveErrorToGo(res.error)
 		return err
 	}
 	return nil
@@ -148,7 +148,7 @@ func (l *LuaThread) Sandbox() error {
 
 	res := C.luago_thread_sandbox(ptr)
 	if res.error != nil {
-		return moveErrorToGoError(res.error) // Return error if sandboxing failed
+		return moveErrorToGo(res.error) // Return error if sandboxing failed
 	}
 	return nil // Return nil if sandboxing was successful
 }
@@ -178,7 +178,7 @@ func (l *LuaThread) Resume(args ...Value) ([]Value, error) {
 
 	res := C.luago_thread_resume(ptr, mw.ptr)
 	if res.error != nil {
-		return nil, moveErrorToGoError(res.error)
+		return nil, moveErrorToGo(res.error)
 	}
 	rets := &luaMultiValue{ptr: res.value, lua: l.lua}
 	retsMw := rets.take()
@@ -210,7 +210,7 @@ func (l *LuaThread) ResumeError(errorValue Value) ([]Value, error) {
 
 	res := C.luago_thread_resume_error(ptr, errorValueC)
 	if res.error != nil {
-		return nil, moveErrorToGoError(res.error)
+		return nil, moveErrorToGo(res.error)
 	}
 	rets := &luaMultiValue{ptr: res.value, lua: l.lua}
 	retsMw := rets.take()

@@ -20,7 +20,7 @@ impl GoNoneResult {
 
     pub fn err(error: String) -> Self {
         Self {
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -57,7 +57,7 @@ impl GoBoolResult {
     pub fn err(error: String) -> Self {
         Self {
             value: false,
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -85,7 +85,7 @@ impl GoI64Result {
     pub fn err(error: String) -> Self {
         Self {
             value: 0,
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -113,7 +113,7 @@ impl GoUsizePtrResult {
     pub fn err(error: String) -> Self {
         Self {
             value: 0,
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -141,7 +141,7 @@ impl GoStringResult {
     pub fn err(error: String) -> Self {
         Self {
             value: std::ptr::null_mut(),
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -169,7 +169,7 @@ impl GoTableResult {
     pub fn err(error: String) -> Self {
         Self {
             value: std::ptr::null_mut(),
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -197,7 +197,7 @@ impl GoFunctionResult {
     pub fn err(error: String) -> Self {
         Self {
             value: std::ptr::null_mut(),
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -225,7 +225,7 @@ impl GoAnyUserDataResult {
     pub fn err(error: String) -> Self {
         Self {
             value: std::ptr::null_mut(),
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -253,7 +253,7 @@ impl GoMultiValueResult {
     pub fn err(error: String) -> Self {
         Self {
             value: std::ptr::null_mut(),
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -281,7 +281,7 @@ impl GoThreadResult {
     pub fn err(error: String) -> Self {
         Self {
             value: std::ptr::null_mut(),
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -309,7 +309,7 @@ impl GoValueResult {
     pub fn err(error: String) -> Self {
         Self {
             value: GoLuaValue::from_owned(mluau::Value::Nil),
-            error: to_error(error),
+            error: to_c_string(error),
         }
     }
 }
@@ -323,15 +323,29 @@ impl Errorable for GoValueResult {
 /// Given a error string, return a heap allocated error
 /// 
 /// Useful for API's which have no return
-pub fn to_error(error: String) -> *mut c_char {
+pub fn to_c_string(error: String) -> *mut c_char {
     let error_str = error.replace('\0', ""); // Ensure no null characters in the string
     let error_cstr = CString::new(error_str).unwrap_or_else(|_| CString::new("Invalid error string").unwrap());
     CString::into_raw(error_cstr)
 }
 
+// Creates a new CString given string and length
+#[unsafe(no_mangle)]
+pub extern "C" fn luago_string_new(s: *const c_char, len: usize) -> *mut c_char {
+    if s.is_null() || len == 0 {
+        let c_string = CString::new("").unwrap_or_else(|_| CString::new("Invalid string").unwrap());
+        return CString::into_raw(c_string);
+    }
+    // Safety: Assume s points to a valid C string of length len.
+    let slice = unsafe { std::slice::from_raw_parts(s as *const u8, len) };
+    let c_string = CString::new(slice).unwrap_or_else(|_| CString::new("Invalid string").unwrap());
+    // Convert CString to raw pointer
+    CString::into_raw(c_string)
+}
+
 /// Frees the memory for an error string created by Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn luago_result_error_free(error_ptr: *mut c_char) {
+pub extern "C" fn luago_string_free(error_ptr: *mut c_char) {
     if !error_ptr.is_null() {
         // Reconstruct the CString from the raw pointer and let it drop,
         // which deallocates the memory.

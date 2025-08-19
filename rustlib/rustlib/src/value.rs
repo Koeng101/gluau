@@ -1,6 +1,6 @@
-use std::{ffi::{c_void, CString}, sync::Arc};
+use std::ffi::c_void;
 
-use crate::{result::wrap_failable, string::LuaStringBytes};
+use crate::result::wrap_failable;
 
 #[repr(C)]
 pub enum LuaValueType {
@@ -16,8 +16,7 @@ pub enum LuaValueType {
     Thread = 9,
     UserData = 10,
     Buffer = 11,
-    Error = 12,
-    Other = 13,
+    Other = 12,
 }
 
 impl LuaValueType {
@@ -35,15 +34,11 @@ impl LuaValueType {
             mluau::Value::Thread(_) => LuaValueType::Thread,
             mluau::Value::UserData(_) => LuaValueType::UserData,
             mluau::Value::Buffer(_) => LuaValueType::Buffer,
-            mluau::Value::Error(_) => LuaValueType::Error,
-            _ => LuaValueType::Other, // Other types
+            mluau::Value::Error(_) => LuaValueType::Other,
+            mluau::Value::Other(_) => LuaValueType::Other, // TODO: Handle other types
         }
     }
 }
-
-pub struct ErrorVariant {
-    pub error: Arc<CString>,
-}   
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -59,7 +54,6 @@ pub union LuaValueData {
     thread: *mut mluau::Thread,
     userdata: *mut mluau::AnyUserData,
     buffer: *mut mluau::Buffer,
-    error: *mut ErrorVariant,
     other: *mut c_void, // Placeholder for other types
 }
 
@@ -147,24 +141,6 @@ impl GoLuaValue {
                     GoLuaValue { tag: LuaValueType::Buffer, data: LuaValueData { buffer: Box::into_raw(Box::new(buffer_ptr.clone())) } }
                 }
             },
-            LuaValueType::Error => {
-                let error_ptr = unsafe { self.data.error };
-                if error_ptr.is_null() {
-                    GoLuaValue { tag: LuaValueType::Error, data: LuaValueData { error: std::ptr::null_mut() } }
-                } else {
-                    // Safety: Avoid free'ing the error pointer here, as it is managed by Go
-                    let error_variant = unsafe { &*error_ptr };
-                    let error_string = error_variant.error.to_string_lossy().into_owned();
-                    let error_cstr = CString::new(error_string).unwrap_or_else(|_| CString::new("Invalid error string").unwrap());
-                    let error_ptr = Arc::new(error_cstr);
-                    let ptr = Box::into_raw(Box::new(ErrorVariant {
-                        error: error_ptr,
-                    }));
-                    GoLuaValue { tag: LuaValueType::Error, data: LuaValueData {
-                        error: ptr,
-                    } }
-                }
-            },
             // TODO: Support this better later on
             LuaValueType::Other => GoLuaValue { tag: LuaValueType::Other, data: LuaValueData { boolean: false } },
         }
@@ -236,17 +212,6 @@ impl GoLuaValue {
                     mluau::Value::Buffer(*buffer_ptr)
                 }
             },
-            LuaValueType::Error => {
-                let error_ptr = unsafe { self.data.error };
-                if error_ptr.is_null() {
-                    mluau::Value::Nil
-                } else {
-                    // Safety: Avoid free'ing the error pointer here, as it is managed by Go
-                    let error_variant = unsafe { Box::from_raw(error_ptr) };
-                    let error_string = error_variant.error.to_string_lossy().into_owned();
-                    mluau::Value::Error(mluau::Error::external(error_string).into())
-                }
-            },  
             LuaValueType::Other => {
                 // Handle other types, currently returning Nil
                 mluau::Value::Nil
@@ -304,13 +269,6 @@ impl GoLuaValue {
                     unsafe { drop(Box::from_raw(buffer_ptr)) };
                 }
             },
-            LuaValueType::Error => {
-                let error_ptr = unsafe { self.data.error };
-                if !error_ptr.is_null() {
-                    // Safety: Avoid free'ing the error pointer here, as it is managed by Go
-                    unsafe { drop(Box::from_raw(error_ptr)) };
-                }
-            },
             LuaValueType::Other => {
                 // Handle other types, currently no-op
             },
@@ -332,16 +290,7 @@ impl GoLuaValue {
             mluau::Value::Thread(t) => LuaValueData { thread: Box::into_raw(Box::new(t)) },
             mluau::Value::UserData(ud) => LuaValueData { userdata: Box::into_raw(Box::new(ud)) },
             mluau::Value::Buffer(buf) => LuaValueData { buffer: Box::into_raw(Box::new(buf)) },
-            mluau::Value::Error(err) => {
-                let err_str = format!("{err}");
-                let err_cstr = CString::new(err_str).unwrap_or_else(|_| CString::new("Invalid error string").unwrap());
-                // Store the error as a CString to ensure proper memory management
-                let err_ptr = Arc::new(err_cstr);
-                let ptr = Box::into_raw(Box::new(ErrorVariant {
-                    error: err_ptr
-                }));
-                LuaValueData { error: ptr }
-            },
+            mluau::Value::Error(_) => LuaValueData { other: std::ptr::null_mut() }, // This variant will never actually happen as disable_error_userdata is set
             mluau::Value::Other(_) => LuaValueData { other: std::ptr::null_mut() }, // TODO: Handle other types
         };
         GoLuaValue { tag, data }
@@ -362,74 +311,5 @@ pub extern "C" fn luago_value_clone(value: GoLuaValue) -> GoLuaValue {
 pub extern "C" fn luago_value_destroy(value: GoLuaValue) {
     wrap_failable(|| {
         value.drop_owned();
-    })
-}
-
-// Creates a new error variant given char array and length
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_error_new(error: *const i8, len: usize) -> *mut ErrorVariant {
-    wrap_failable(|| {
-        // Safety: Assume error is a valid, non-null pointer to a C string of length len.
-        if error.is_null() || len == 0 {
-            // Assume the user wanted to create an empty error
-            let c_str = CString::new("").unwrap();
-            let arc_str = Arc::new(c_str);
-            let ptr = Box::into_raw(Box::new(ErrorVariant {
-                error: arc_str,
-            }));
-            return ptr;
-        }
-        // Convert the C string to a Rust CString
-        let c_str = unsafe { std::slice::from_raw_parts(error as *const u8, len) };
-        let c_string = CString::new(c_str).unwrap_or_else(|_| {
-            // If the CString creation fails, return a null pointer
-            CString::new("Invalid error string").unwrap()
-        });
-        let arc_str = Arc::new(c_string);
-
-        let ptr = Box::into_raw(Box::new(ErrorVariant {
-            error: arc_str,
-        }));
-
-        ptr
-    })
-}
-
-// Returns the inner error string from the ErrorVariant
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_error_get_string(error: *mut ErrorVariant) -> super::string::LuaStringBytes {
-    wrap_failable(|| {
-        // Safety: Assume error is a valid, non-null pointer to an ErrorVariant
-        if error.is_null() {
-            return LuaStringBytes {
-                data: std::ptr::null(),
-                size: 0,
-            };
-        }
-
-        // Reconstruct the ErrorVariant and get the error string
-        let error_variant = unsafe { &*error };
-        let error_string = error_variant.error.to_str().unwrap_or("Invalid error string");
-
-        LuaStringBytes {
-            data: error_string.as_ptr(),
-            size: error_string.len(),
-        }
-    })
-}
-
-// Needed to free a error string
-#[unsafe(no_mangle)]
-pub extern "C" fn luago_error_free(error: *mut ErrorVariant) {
-    wrap_failable(|| {
-        // Safety: Assume error is a valid, non-null pointer to a C string
-        if error.is_null() {
-            return;
-        }
-
-        // Reconstruct the ErrorVariant and drop it
-        unsafe {
-            drop(Box::from_raw(error));
-        }
     })
 }

@@ -44,8 +44,9 @@ struct IGoCallback {
 // Test callbacks
 void test_callback(struct IGoCallback* cb, void* val);
 
-// Note: only deallocates the `GoResult` error, not the value
-void luago_result_error_free(char* result_error_ptr);
+// Rust String API
+char* luago_string_new(const char* str, size_t len);
+void luago_string_free(char* result_error_ptr);
 
 // Returns a GoResult[LuaString]
 struct GoStringResult luago_create_string(struct Lua* ptr, const char* str, size_t len);
@@ -164,7 +165,7 @@ struct FunctionCallbackData {
 
     // Go side may set this to set a response
     struct GoMultiValue* values; // NOTE: Rust will deallocate this
-    struct ErrorVariant *error; // NOTE: Rust will deallocate this
+    char* error; // NOTE: Rust will deallocate this
 };
 struct GoFunctionResult luago_create_function(struct Lua* ptr, struct IGoCallback cb);
 struct GoMultiValueResult luago_function_call(struct LuaFunction* ptr, struct GoMultiValue* args);
@@ -297,7 +298,7 @@ struct InterruptData {
 
     // Go side may set this to set a response
     uint8_t vm_state;
-    struct ErrorVariant *error; // NOTE: Rust will deallocate this
+    const char* error; // NOTE: Rust will deallocate this
 };
 void luago_set_interrupt(struct Lua* ptr, struct IGoCallback cb);
 void luago_remove_interrupt(struct Lua* ptr);
