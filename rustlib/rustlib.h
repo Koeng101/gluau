@@ -316,3 +316,67 @@ void luago_remove_interrupt(struct Lua* ptr);
 // Registry
 struct GoNoneResult luago_set_named_registry_value(struct Lua* ptr, const char* key, size_t keylen, struct GoLuaValue value);
 struct GoValueResult luago_named_registry_value(struct Lua* ptr, const char* key, size_t keylen);
+
+// Require API
+struct GoNavigationResult {
+    bool not_found;
+    bool ambiguous;
+    char* other; // Rust will deallocate this automatically. Should be allocated with moveString
+};
+
+struct IsRequireAllowed {
+    char* chunk_name; // Go will free this automatically with the moveStringToGo function
+    bool data; // Go may set this to true if the require is allowed
+};
+
+struct ResetOrJumpToAliasOrToChild {
+    char* str; // Go will free this automatically with the moveStringToGo function
+    struct GoNavigationResult data; // Go may set this to true if the require is allowed
+};
+
+struct ToParent {
+    struct GoNavigationResult data; // Go may set this to true if the require is allowed
+};
+
+struct HasModuleOrHasConfig {
+    bool data; // Go may set this to true if the require is allowed
+};
+
+struct CacheKey {
+    char* data; // Rust will deallocate this automatically. Should be allocated with moveStringToRust
+};
+
+struct Config {
+    char* data; // Pointer to a null-terminated C string for the configuration data
+    char* error; // Pointer to a null-terminated C string for the error message
+};
+
+struct Loader {
+    struct Lua* lua; // Pointer to the Lua instance
+    struct LuaFunction* function; // Go side may set this in response
+    char* error; // Pointer to a null-terminated C string for the error message
+};
+
+struct GoRequire {
+    // Checks if the require is allowed for the given chunk name
+    struct IGoCallback is_require_allowed;
+    // Resets the require state
+    struct IGoCallback reset;
+    // Jumps to an alias or to a child module
+    struct IGoCallback jump_to_alias;
+    // Navigates to the parent module
+    struct IGoCallback to_parent;
+    // Navigates to a child module
+    struct IGoCallback to_child;
+    // Checks if a module exists
+    struct IGoCallback has_module;
+    // Gets the cache key for a module
+    struct IGoCallback cache_key;
+    // Checks if a configuration exists
+    struct IGoCallback has_config;
+    // Gets the configuration data
+    struct IGoCallback config;
+    // Gets the loader function for the current module
+    struct IGoCallback loader;
+};
+struct GoFunctionResult luago_create_require_function(struct Lua* ptr, struct GoRequire gr);

@@ -3,13 +3,19 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
 	// Import to ensure callback package is initialized
 	vmlib "github.com/gluau/gluau/vm"
 	"github.com/gluau/gluau/vmutils"
+	"github.com/gluau/gluau/vmutils/require"
 )
 
 // #include <stdlib.h>
@@ -724,4 +730,231 @@ func main() {
 	}
 
 	vm3.Close()
+
+	fmt.Println("testing require")
+
+	// Require API
+	vm4, err := vmlib.CreateLuaVm()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Lua VM created successfully for require test", vm4)
+
+	mapFs := NewMapFs(map[string]string{
+		"init.luau":               "",
+		"test.luau":               "return require('./foo/test')",
+		"foo/test.luau":           "return require('./test2')",
+		"foo/test2.luau":          "return require('./doo/test2')",
+		"foo/doo/test2.luau":      "return require('@dir-alias/bar')",
+		"foo/dir-alias/bar.luau":  "return require('./baz')",
+		"foo/dir-alias/baz.luau":  "return require('@dir-alias/bat')",
+		"foo/dir-alias/bat.luau":  "return require('./baz2')",
+		"foo/dir-alias/baz2.luau": "return require('../commacomma')",
+		"foo/commacomma.luau":     "return require('./commacomma2')",
+		"foo/commacomma2.luau":    "return require('../roothelper')",
+		"roothelper.luau":         "return require('./roothelper2')",
+		"roothelper2.luau":        "return require('@dir-alias-2/baz')",
+		"dogs/2/baz.luau":         "return require('../../nextluaurcarea/baz')",
+		"nextluaurcarea/baz.luau": "return require('@dir-alias-2/chainy')",
+		"dogs/3/chainy.luau":      "return 3",
+		".luaurc": `{
+			"aliases": {
+				"dir-alias": "./foo/dir-alias",
+				"dir-alias-2": "./dogs/2",
+			}
+		}`,
+		"nextluaurcarea/.luaurc": `{
+			"aliases": {
+				"dir-alias": "../foo/dir-alias",
+				"dir-alias-2": "../dogs/3"
+			}
+		}`,
+	})
+	simpleRequirer := require.NewSimpleRequirer("requireCachePrefix", vm4.Globals(), require.NewUnixVfs(mapFs), true)
+	requireFunc, err := vm4.CreateRequireFunction(simpleRequirer)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create require function: %v", err))
+	}
+
+	fmt.Println("Require function created successfully:", requireFunc)
+
+	vm4.Globals().Set(vmlib.GoString("require"), requireFunc.ToValue()) // This consumes requireFunc so no need to explictly close it
+
+	chunkFunc, err := vm4.LoadChunk(vmlib.ChunkOpts{
+		Name: "/",
+		Code: "return require('@self/test')",
+	})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to load chunk for require test: %v", err))
+	}
+	res, err = chunkFunc.Call()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to call chunk for require test: %v", err))
+	}
+	if len(res) != 1 {
+		panic("expected 1 result from require test, got " + fmt.Sprint(len(res)))
+	}
+	if ok, _ := res[0].Equals(vmlib.NewValueInteger(3)); !ok {
+		panic("expected require test to return 3, got " + res[0].String())
+	}
+
+	vm4.Close() // Ensure we close the VM when done
+}
+
+// NewMapFs returns a new FileSystem from the provided map.
+// Map keys must be forward slash-separated paths with
+// no leading slash, such as "file1.txt" or "dir/file2.txt".
+// New panics if any of the paths contain a leading slash.
+func NewMapFs(m map[string]string) fs.ReadDirFS {
+	// Verify all provided paths are relative before proceeding.
+	var pathsWithLeadingSlash []string
+	for p := range m {
+		if strings.HasPrefix(p, "/") {
+			pathsWithLeadingSlash = append(pathsWithLeadingSlash, p)
+		}
+	}
+	if len(pathsWithLeadingSlash) > 0 {
+		panic(fmt.Errorf("mapfs.New: invalid paths with a leading slash: %q", pathsWithLeadingSlash))
+	}
+
+	return mapFS(m)
+}
+
+// mapFS is the map based implementation of FileSystem
+//
+// Used in require impl
+type mapFS map[string]string
+
+func (fs mapFS) Close() error { return nil }
+
+func filename(p string) string {
+	return strings.TrimPrefix(p, "/")
+}
+
+func (fs mapFS) Open(p string) (fs.File, error) {
+	p = pathFix(p)
+	b, ok := fs[filename(p)]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return nopCloser{strings.NewReader(b)}, nil
+}
+
+func fileInfo(name, contents string) mapFI {
+	return mapFI{name: path.Base(name), size: len(contents)}
+}
+
+func dirInfo(name string) mapFI {
+	return mapFI{name: path.Base(name), dir: true}
+}
+
+// slashdir returns path.Dir(p), but special-cases paths not beginning
+// with a slash to be in the root.
+func slashdir(p string) string {
+	d := path.Dir(p)
+	if d == "." {
+		return "/"
+	}
+	if strings.HasPrefix(p, "/") {
+		return d
+	}
+	return "/" + d
+}
+
+func pathFix(path string) string {
+	if strings.HasPrefix(path, "./") {
+		return "/" + strings.TrimPrefix(path, "./")
+	} else if !strings.HasPrefix(path, "/") {
+		return "/" + path
+	}
+	return path
+}
+
+func (fs mapFS) ReadDir(p string) ([]fs.DirEntry, error) {
+	p = pathFix(p)
+	p = path.Clean(p)
+	var ents []string
+	fim := make(map[string]mapFI) // base -> fi
+	for fn, b := range fs {
+		dir := slashdir(fn)
+		isFile := true
+		var lastBase string
+		for {
+			if dir == p {
+				base := lastBase
+				if isFile {
+					base = path.Base(fn)
+				}
+				if _, ok := fim[base]; !ok {
+					var fi mapFI
+					if isFile {
+						fi = fileInfo(fn, b)
+					} else {
+						fi = dirInfo(base)
+					}
+					ents = append(ents, base)
+					fim[base] = fi
+				}
+			}
+			if dir == "/" {
+				break
+			} else {
+				isFile = false
+				lastBase = path.Base(dir)
+				dir = path.Dir(dir)
+			}
+		}
+	}
+	if len(ents) == 0 {
+		return nil, os.ErrNotExist
+	}
+
+	sort.Strings(ents)
+	return createDirEntry(ents, fim), nil
+}
+
+func createDirEntry(ents []string, fim map[string]mapFI) []fs.DirEntry {
+	var list []fs.DirEntry
+	for _, dir := range ents {
+		list = append(list, fim[dir])
+	}
+	return list
+}
+
+// mapFI is the map-based implementation of FileInfo.
+type mapFI struct {
+	name string
+	size int
+	dir  bool
+}
+
+func (fi mapFI) IsDir() bool        { return fi.dir }
+func (fi mapFI) ModTime() time.Time { return time.Time{} }
+func (fi mapFI) Mode() os.FileMode {
+	if fi.IsDir() {
+		return 0755 | os.ModeDir
+	}
+	return 0444
+}
+func (fi mapFI) Name() string { return path.Base(fi.name) }
+func (fi mapFI) Size() int64  { return int64(fi.size) }
+func (fi mapFI) Sys() any     { return nil }
+func (fi mapFI) Info() (os.FileInfo, error) {
+	return fi, nil
+}
+func (fi mapFI) Type() fs.FileMode {
+	if fi.IsDir() {
+		return fs.ModeDir
+	}
+	return 0
+}
+
+type nopCloser struct {
+	io.ReadSeeker
+}
+
+func (nc nopCloser) Close() error { return nil }
+func (nc nopCloser) Stat() (os.FileInfo, error) {
+	return nil, fs.ErrInvalid
 }

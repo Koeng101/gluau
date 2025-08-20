@@ -357,6 +357,15 @@ pub fn to_c_string(error: String) -> *mut c_char {
     CString::into_raw(error_cstr)
 }
 
+/// Given a error string, return a heap allocated error
+/// 
+/// Useful for API's which have no return
+pub fn to_c_string_from_ref(s: &str) -> *mut c_char {
+    let error_str = s.replace('\0', ""); // Ensure no null characters in the string
+    let error_cstr = CString::new(error_str).unwrap_or_else(|_| CString::new("Invalid error string").unwrap());
+    CString::into_raw(error_cstr)
+}
+
 // Creates a new CString given string and length
 #[unsafe(no_mangle)]
 pub extern "C" fn luago_string_new(s: *const c_char, len: usize) -> *mut c_char {

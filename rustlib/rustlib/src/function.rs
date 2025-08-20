@@ -10,7 +10,7 @@ pub struct FunctionCallbackData {
     //
     // This means that (future) API's like Lua.CurrentThread will return
     // the correct thread when using this Lua.
-    pub lua: *mut mluau::Lua,
+    pub lua: *mut mluau::Lua, // Must be deallocated by Go when needed
     // Arguments passed to the function by Lua
     pub args: *mut GoMultiValue,
 

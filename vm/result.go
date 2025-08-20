@@ -5,8 +5,8 @@ package vm
 */
 import "C"
 import (
+	"bytes"
 	"errors"
-	"strings"
 	"unsafe"
 )
 
@@ -14,7 +14,6 @@ func moveStringToRust(s string) *C.char {
 	if len(s) == 0 {
 		return C.luago_string_new(nil, 0) // Return empty char array if the string is empty
 	}
-	s = strings.ReplaceAll(s, "\x00", "") // Remove any null characters
 	return moveBytesToRust([]byte(s))
 }
 
@@ -22,6 +21,7 @@ func moveBytesToRust(b []byte) *C.char {
 	if b == nil {
 		return C.luago_string_new(nil, 0) // Return empty char array if the byte slice is nil
 	}
+	b = bytes.ReplaceAll(b, []byte{0}, []byte{}) // Remove any null bytes from the byte slice
 	return C.luago_string_new((*C.char)(unsafe.Pointer(&b[0])), C.size_t(len(b)))
 }
 
@@ -37,7 +37,7 @@ func moveStringToGo(err *C.char) string {
 		return ""
 	}
 	errStr := C.GoString(err)
-	C.luago_string_free(err) // Free the error string
+	C.luago_string_free(err) // Free the string
 	return errStr
 }
 
