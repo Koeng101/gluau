@@ -9,4 +9,4 @@ build_windows_amd64:
 	x86_64-w64-mingw32-strip --strip-debug ../../target/x86_64-pc-windows-gnu/release/librustlib.a
 
 build_normal:
-	cargo build --release -vvv
+	cargo build -vvv

@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["staticlib"]
 
 [dependencies]
-mluau = { git = "https://github.com/mluau/mluau", features = ["send", "value-ref-refcounted"] }
+mluau = { git = "https://github.com/mluau/mluau", features = ["send"] }
 bitflags = "2.9"
 
 [profile.release]

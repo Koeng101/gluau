@@ -206,6 +206,8 @@ func main() {
 		panic(fmt.Sprintf("Expected memory limit to be 100000000000000, got %d", vm.MemoryLimit()))
 	}
 	fmt.Println("New memory limit set to:", vm.MemoryLimit())
+	vm.Close()
+	vm = vmutils.Must(vmlib.CreateLuaVm())
 
 	luaTable, err := vm.CreateTableWithCapacity(100000000, 10)
 	if err != nil {
@@ -450,15 +452,14 @@ func main() {
 		return vmlib.VmStateContinue, nil // Continue execution
 	})
 
-	// Call the Lua function again to trigger the interrupt
-	//
-	// Currently, we havent made it a LuaThread yet, this will yield a attempt to yield
-	// across metamethod/C-call boundary
-	_, err = luaFunc.Call()
+	// Call the Lua function again as a thread to trigger the interrupt
+	th := vmutils.Must(vm.CreateThread(luaFunc))
+	_, err = th.Resume()
 	if err != nil {
-		fmt.Println("Lua function call error (expected due to interrupt):", err)
-	} else {
-		panic("Expected an error from the Lua function call due to interrupt")
+		panic("Expected graceful exit from the Lua function call due to interrupt")
+	}
+	if th.Status() != vmlib.ThreadStatusResumable {
+		panic("vm thread not resumable")
 	}
 
 	// Thread API

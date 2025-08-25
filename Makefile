@@ -1,13 +1,8 @@
 ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
-# Before running this, ensure you have the necessary targets installed:
-# rustup default nightly # build_std needs nightly
-# rustup target add x86_64-unknown-linux-gnu
-# rustup target add aarch64-unknown-linux-gnu
-# sudo apt install g++-aarch64-linux-gnu
 library_normal:
 	$(MAKE) -C rustlib/rustlib build_normal
-	cp target/release/librustlib.a rustlib/librustlib_linux_amd64.a
+	cp target/debug/librustlib.a rustlib/librustlib_linux_amd64.a
 
 # Before running this, ensure you have the necessary targets installed:
 # rustup default nightly # build_std needs nightly
